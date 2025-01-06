@@ -15,7 +15,7 @@
 
 ##Varables
 #Set DP Address here:
-$mediatorIP = '10.9.46.236'
+$mediatorIP = 'x.x.x.x'
 
 
 #If not run as admin, lauch PowerShell under Administrator Context.
