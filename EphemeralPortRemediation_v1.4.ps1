@@ -4,7 +4,8 @@
 #Version changes: v1.4 Added a reload of the Windows Registry v1.3 Cleaner output v1.2 added elevation functions 
 #v1.1 Fixed typos v1.0 Original release
 #
-#Description: This script is designed to expand the available range and make the OS more aggressive in truncating hung ports,thus minimizing the impacts.
+#Description: This script is designed to expand the available range and make the OS more aggressive in truncating 
+#hung ports,thus minimizing the impacts.
 #See https://docs.microsoft.com/en-us/windows/client-management/troubleshoot-tcpip-port-exhaust for more information
 ####################################################################################################################>
 
