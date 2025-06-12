@@ -76,4 +76,4 @@ else
     echo "No compatable nvidea GPU found."
 fi
 
-reboot 60
+shutdown -r 60
