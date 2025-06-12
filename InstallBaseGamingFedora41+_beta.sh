@@ -31,7 +31,7 @@ dnf config-manager setopt fedora-cisco-openh264.enabled=1
 dnf install steam -y
 
 ##Lutris function##
-dnf install lutris
+dnf install lutris -y
 
 ##Discord function##
 echo "The flatpak version of Discord has a known bug with streaming. Installing the RPM fusion version."
