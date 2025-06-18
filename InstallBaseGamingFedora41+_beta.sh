@@ -33,6 +33,9 @@ dnf install steam -y
 ##Lutris function##
 dnf install lutris -y
 
+##Proton-QT##
+flatpak install ProtonUp-Qt
+
 ##Discord function##
 echo "The flatpak version of Discord has a known bug with streaming. Installing the RPM fusion version."
 #remove existing discord instance
