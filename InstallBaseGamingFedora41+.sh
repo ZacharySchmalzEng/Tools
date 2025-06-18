@@ -22,6 +22,7 @@ flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.f
 dnf copr enable t0xic0der/nvidia-auto-installer-for-fedora -y
 dnf group upgrade core -y
 dnf4 group update core -y
+dnf update -y
 
 ##Wine
 dnf install winetricks -y
