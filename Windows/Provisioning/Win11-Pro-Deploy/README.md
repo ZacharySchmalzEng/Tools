@@ -1,4 +1,4 @@
-# Windows 11 Pro & Server Automated Deployment & Provisioning
+# Windows 11 Pro & Server Automated Deployment & Provisioning 
 
 **`Win11-Pro-Deploy.ps1`** is a highly modular, automated PowerShell script designed to transform a fresh Windows 11 Pro or Windows Server installation into a hardened, debloated, and fully configured power-user environment.
 
