@@ -1,84 +1,59 @@
 <#
 .SYNOPSIS
-    Automated Windows 11 Pro provisioning and environment setup script.
-
-.DESCRIPTION
-    This script performs a comprehensive post-installation setup for a fresh Windows 11 Pro environment.
-    It supports modular execution via command-line flags. If no flags are provided, it displays a help menu.
-
+    Automated Windows 11 Pro and Server provisioning and environment setup script.
 .AUTHOR
     Zachary Schmalz
-
 .NOTES
-    Version:        6.1
+    Version:        6.4
     Date:           2026-02-26
-    Requirements:   Windows 11 Pro, PowerShell 5.1+, Active Internet Connection.
-    Execution:      Must be run with local Administrator privileges.
 #>
 
 param (
-    [switch]$System,
-    [switch]$Debloat,
-    [switch]$Security,
-    [switch]$Dev,
-    [switch]$Apps,
-    [switch]$DevApps,
-    [switch]$Cyber,
-    [switch]$Maker,
-    [switch]$Gaming,
-    [switch]$Nvidia,
-    [switch]$DualBoot,
-    [switch]$Standard,
-    [switch]$Complete,
-    [switch]$Help
+    [switch]$System, [switch]$Debloat, [switch]$Security, [switch]$Dev,
+    [switch]$Apps, [switch]$DevApps, [switch]$Cyber, [switch]$Maker,
+    [switch]$Gaming, [switch]$Nvidia, [switch]$Creators, [switch]$DualBoot,
+    [switch]$Standard, [switch]$Complete, [switch]$Help
 )
 
-# 1. --- Help Menu & Parameter Logic ---
-$RunSoftware = ($Apps -or $DevApps -or $Cyber -or $Maker -or $Gaming -or $Nvidia -or $Standard -or $Complete)
+# --- Helper Function: Linux Disk Discovery ---
+function Get-LinuxDiskPath {
+    Write-Host "--- Scanning for Linux partitions... ---" -ForegroundColor Yellow
+    # Filters for 'Unknown' partitions (standard for Linux FS in Windows)
+    # Target the largest Unknown/Linux partition found across all physical disks
+    $LinuxDisk = Get-Partition | Where-Object { $_.Type -eq 'Unknown' -or $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' } | 
+                 Sort-Object Size -Descending | Select-Object -First 1
+
+    if ($null -ne $LinuxDisk) {
+        $DiskNum = $LinuxDisk.DiskNumber
+        $PartNum = $LinuxDisk.PartitionNumber
+        return @{ Path = "\\.\PHYSICALDRIVE$DiskNum"; Partition = $PartNum; Found = $true }
+    } else {
+        return @{ Path = "\\.\PHYSICALDRIVE1"; Partition = "2"; Found = $false }
+    }
+}
+
+# --- Helper Function: Server OS Check ---
+function Test-IsServerOS {
+    $OS = Get-CimInstance Win32_OperatingSystem
+    # ProductType 1 is Workstation, 2 is Domain Controller, 3 is Server
+    return $OS.ProductType -ne 1
+}
+
+# 1. --- Parameter Logic & Profiles ---
+if ($Complete) {
+    $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; 
+    $Apps = $true; $DevApps = $true; $Cyber = $true; $Maker = $true; $Gaming = $true; $Nvidia = $true; $Creators = $true;
+}
+if ($Standard) {
+    $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; $Apps = $true; $DevApps = $true;
+}
+
+$RunSoftware = ($Apps -or $DevApps -or $Cyber -or $Maker -or $Gaming -or $Nvidia -or $Creators)
 $RunAny = ($System -or $Debloat -or $Security -or $Dev -or $DualBoot -or $RunSoftware)
 
 if ($Help -or -not $RunAny) {
-    Write-Host ""
-    Write-Host "===============================================================" -ForegroundColor Cyan
-    Write-Host " Windows 11 Pro Environment Setup Script v6.1" -ForegroundColor White
-    Write-Host "===============================================================" -ForegroundColor Cyan
-    Write-Host "Usage: .\Win11-Pro-Deploy.ps1 [Options]"
-    Write-Host ""
-    Write-Host "CORE OS OPTIONS:"
-    Write-Host "  -System    Applies system tweaks (Explorer, Power Plan, Context Menu, MSA/OneDrive)"
-    Write-Host "  -Debloat   Removes Appx bloatware, widgets, and disables Consumer Features"
-    Write-Host "  -Security  Enables Defender PUA protection, OS Telemetry disable, Windows Updates"
-    Write-Host "  -Dev       Enables OS developer features (WSL, Windows Sandbox, OpenSSH Client & Server)"
-    Write-Host "  -DualBoot  Configures an automated Scheduled Task to mount Linux via WSL at logon"
-    Write-Host ""
-    Write-Host "SOFTWARE OPTIONS:"
-    Write-Host "  -Apps      Core utilities (Browsers, Signal, WhatsApp, 7-Zip, VLC, Discord, Obsidian, PowerToys, Terminal)"
-    Write-Host "  -DevApps   Scripting/Dev tools (VS Code, Python, GitHub Desktop, Notepad++, PuTTY)"
-    Write-Host "  -Cyber     Network & Analysis tools (Wireshark, Nmap, Advanced IP Scanner)"
-    Write-Host "  -Maker     3D Printing & CAD tools (PrusaSlicer, OrcaSlicer, Bambu Studio, Fusion 360)"
-    Write-Host "  -Gaming    Gaming & Media (Steam, Battle.net, OBS Studio)"
-    Write-Host "  -Nvidia    Dynamically fetches and silently installs the latest NVIDIA App"
-    Write-Host ""
-    Write-Host "DEPLOYMENT PROFILES:"
-    Write-Host "  -Standard  Universal baseline: System, Debloat, Security, Dev, Apps, DevApps"
-    Write-Host "  -Complete  Heavy workstation: All Standard modules PLUS Cyber, Maker, Gaming, and Nvidia"
-    Write-Host "  -Help      Displays this help menu"
-    Write-Host "===============================================================" -ForegroundColor Cyan
-    Write-Host ""
+    Write-Host "Usage: .\Win11-Pro-Deploy.ps1 [-Standard | -Complete | -System | -Debloat | ...]"
     return
-}
-
-# Deployment Profile Logic (Note: Both profiles intentionally exclude the hardware-specific -DualBoot)
-if ($Complete) {
-    $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; 
-    $Apps = $true; $DevApps = $true; $Cyber = $true; $Maker = $true; $Gaming = $true; $Nvidia = $true;
-    $RunSoftware = $true
-}
-
-if ($Standard) {
-    $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; 
-    $Apps = $true; $DevApps = $true;
-    $RunSoftware = $true
 }
 
 # 2. --- Execution Policy Bypass ---
@@ -271,65 +246,60 @@ if ($Dev) {
 
 
 # ==============================================================================
-#  MODULE: DUAL BOOT (Linux Mounting Task)
+#  MODULE: DUAL BOOT (Dynamic Linux Mounting)
 # ==============================================================================
 if ($DualBoot) {
     Write-Host "`n[+] STARTING DUAL BOOT MODULE..." -ForegroundColor Magenta
+    
+    $LinuxInfo = Get-LinuxDiskPath
+    $TargetDrive = $LinuxInfo.Path
+    $TargetPart = $LinuxInfo.Partition
+
+    if ($LinuxInfo.Found) {
+        Write-Host "Auto-Detected Linux partition on Disk $($TargetDrive.Replace('\\.\PHYSICALDRIVE','')), Partition $TargetPart" -ForegroundColor Green
+    } else {
+        Write-Warning "Could not auto-detect Linux partition. Defaulting to $TargetDrive."
+    }
+
     Write-Host "--- Configuring Scheduled Task for Linux WSL Mount... ---" -ForegroundColor Yellow
     try {
         $CustomScriptsDir = "C:\Scripts"
-        if (-not (Test-Path $CustomScriptsDir)) { 
-            New-Item -Path $CustomScriptsDir -ItemType Directory -Force | Out-Null 
-            Write-Host "Created directory: $CustomScriptsDir" -ForegroundColor Cyan
-        }
+        if (-not (Test-Path $CustomScriptsDir)) { New-Item -Path $CustomScriptsDir -ItemType Directory -Force | Out-Null }
         
         $MountScriptPath = Join-Path -Path $CustomScriptsDir -ChildPath "Mount-Linux.ps1"
-        
         $MountScriptContent = @"
 <#
 .SYNOPSIS
     Automated silent background script to mount the Linux partition via WSL.
 #>
-# ==============================================================================
-# CONFIGURATION 
-# If your drive fails to mount, verify these settings by running 'wsl --mount --list' 
-# in a standard Administrator PowerShell window.
-# ==============================================================================
-`$DrivePath = "\\.\PHYSICALDRIVE1"
-`$PartitionNum = "2"
+`$DrivePath = "$TargetDrive"
+`$PartitionNum = "$TargetPart"
 `$FileSystem = "btrfs"
 
-# Sleep for 15 seconds to allow the user profile and WSL subsystem to fully initialize
 Start-Sleep -Seconds 15
-
-# Attempt to silently mount the drive
 wsl --mount `$DrivePath --partition `$PartitionNum --type `$FileSystem
 "@
         Set-Content -Path $MountScriptPath -Value $MountScriptContent -Force
-        Write-Host "Helper script generated at: $MountScriptPath" -ForegroundColor Green
+        Write-Host "Helper script generated/overwritten at: $MountScriptPath" -ForegroundColor Green
 
-        # Register the Scheduled Task
+        # Scheduled Task Registration logic (Idempotent)
         $TaskName = "Mount-Linux-WSL"
         $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
         
         if ($null -ne $ExistingTask) {
-            Write-Host "Task '$TaskName' already exists. Re-registering..." -ForegroundColor Yellow
+            Write-Host "Task '$TaskName' already exists. Re-registering to ensure updated disk paths..." -ForegroundColor Yellow
             Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
         }
 
         $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$MountScriptPath`""
         $Trigger = New-ScheduledTaskTrigger -AtLogOn
-        # Run as the highest available privileges (Administrator) required for wsl --mount
         $Principal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Administrators" -RunLevel Highest
         $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
         
-        $Task = New-ScheduledTask -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings
-        Register-ScheduledTask -TaskName $TaskName -InputObject $Task -Force | Out-Null
-
-        Write-Host "--- Scheduled Task '$TaskName' created successfully. ---" -ForegroundColor Green
+        Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
+        Write-Host "Scheduled Task '$TaskName' registered successfully." -ForegroundColor Green
     } catch { Write-Error "Failed to configure Dual Boot task. Error: $_" }
 }
-
 
 # ==============================================================================
 #  MODULE: SOFTWARE DEPLOYMENT
@@ -341,18 +311,24 @@ if ($RunSoftware) {
     winget source update | Out-Null
     Write-Host "--- Winget sources updated. ---" -ForegroundColor Green
 
+    $IsServer = Test-IsServerOS
+    if ($IsServer) { Write-Host "--- Server OS detected: Substituting WinDirStat for TreeSize Free ---" -ForegroundColor Cyan }
+
     $packages = @()
     
     if ($Apps) {
         $packages += "Brave.Brave", "Google.Chrome", "Mozilla.Firefox", "Opera.Opera", "7zip.7zip", 
                      "VideoLAN.VLC", "Discord.Discord", "Obsidian.Obsidian", "OpenWhisperSystems.Signal", 
-                     "9NKSQGP7F2NH", "JAMSoftware.TreeSize.Free", "CrystalDewWorld.CrystalDiskInfo.ShizukuEdition", 
+                     "9NKSQGP7F2NH", "CrystalDewWorld.CrystalDiskInfo.ShizukuEdition", 
                      "Microsoft.PowerToys", "voidtools.Everything", "Microsoft.WindowsTerminal", "Rufus.Rufus"
+        
+        if ($IsServer) { $packages += "WinDirStat.WinDirStat" } 
+        else { $packages += "JAMSoftware.TreeSize.Free" }
     }
     
     if ($DevApps) {
         $packages += "Microsoft.VisualStudioCode", "GitHub.GitHubDesktop", "Python.Python.3.13", 
-                     "Microsoft.PowerShell", "Notepad++.Notepad++", "PuTTY.PuTTY"
+                     "Microsoft.PowerShell", "Notepad++.Notepad++", "PuTTY.PuTTY", "OpenSSL.OpenSSL", "BareTail.BareTail"
     }
     
     if ($Cyber) {
@@ -363,6 +339,10 @@ if ($RunSoftware) {
         $packages += "Prusa3D.PrusaSlicer", "SoftFever.OrcaSlicer", "Bambulab.Bambustudio", "Autodesk.Fusion360"
     }
     
+    if ($Creators) {
+        $packages += "darktable.darktable", "BlenderFoundation.Blender", "HandBrake.HandBrake", "Audacity.Audacity", "Inkscape.Inkscape"
+    }
+
     if ($Gaming) {
         $packages += "Valve.Steam", "OBSProject.OBSStudio"
     }
