@@ -16,7 +16,7 @@ Rather than a "one-size-fits-all" approach, this script uses command-line flags 
 ## 🚀 Usage
 
 ### Prerequisites
-* **OS**: Windows 11 Pro
+* **OS**: Windows 11 Pro or Windows Server (Limited support for Windows 10)
 * **Privileges**: Must be run in an **Administrator** PowerShell terminal.
 * **Internet**: Active connection required for Winget and dynamic downloads.
 
