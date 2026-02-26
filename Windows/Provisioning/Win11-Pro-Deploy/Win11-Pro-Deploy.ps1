@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Automated Windows 11 Pro and Server provisioning and environment setup script.
+    Automated Windows 10/11 Pro and Server provisioning and environment setup script.
 .AUTHOR
     Zachary Schmalz
 .NOTES
-    Version:        6.4
+    Version:        6.5
     Date:           2026-02-26
 #>
 
@@ -15,11 +15,12 @@ param (
     [switch]$Standard, [switch]$Complete, [switch]$Help
 )
 
-# --- Helper Function: Linux Disk Discovery ---
+# ==============================================================================
+#  HELPER FUNCTIONS
+# ==============================================================================
+
 function Get-LinuxDiskPath {
     Write-Host "--- Scanning for Linux partitions... ---" -ForegroundColor Yellow
-    # Filters for 'Unknown' partitions (standard for Linux FS in Windows)
-    # Target the largest Unknown/Linux partition found across all physical disks
     $LinuxDisk = Get-Partition | Where-Object { $_.Type -eq 'Unknown' -or $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' } | 
                  Sort-Object Size -Descending | Select-Object -First 1
 
@@ -32,14 +33,19 @@ function Get-LinuxDiskPath {
     }
 }
 
-# --- Helper Function: Server OS Check ---
 function Test-IsServerOS {
     $OS = Get-CimInstance Win32_OperatingSystem
-    # ProductType 1 is Workstation, 2 is Domain Controller, 3 is Server
     return $OS.ProductType -ne 1
 }
 
-# 1. --- Parameter Logic & Profiles ---
+function Test-IsWin11 {
+    return [Environment]::OSVersion.Version.Build -ge 22000
+}
+
+# ==============================================================================
+#  PARAMETER LOGIC & PROFILES
+# ==============================================================================
+
 if ($Complete) {
     $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; 
     $Apps = $true; $DevApps = $true; $Cyber = $true; $Maker = $true; $Gaming = $true; $Nvidia = $true; $Creators = $true;
@@ -56,7 +62,10 @@ if ($Help -or -not $RunAny) {
     return
 }
 
-# 2. --- Execution Policy Bypass ---
+# ==============================================================================
+#  PRE-FLIGHT CHECKS
+# ==============================================================================
+
 function Invoke-ExecutionPolicyBypass {
     $currentPolicy = Get-ExecutionPolicy -Scope Process
     if ($currentPolicy -ne 'Bypass') {
@@ -69,7 +78,6 @@ function Invoke-ExecutionPolicyBypass {
 }
 Invoke-ExecutionPolicyBypass
 
-# 3. --- Administrator Check ---
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Warning "Administrator permissions are required to run provisioning modules."
     Write-Host "Please re-run this script with 'Run as Administrator'."
@@ -77,7 +85,6 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     return
 }
 
-# 4. --- Setup Logging & Paths ---
 $ScriptDir = Split-Path -Path $MyInvocation.MyCommand.Path -Parent
 $LogDir = Join-Path -Path $ScriptDir -ChildPath "InstallerLogs"
 $InstallerDir = Join-Path -Path $ScriptDir -ChildPath "Installers"
@@ -94,7 +101,10 @@ Start-Transcript -Path $LogPath
 Write-Host "Running with Administrator privileges." -ForegroundColor Green
 Set-Location -Path $ScriptDir
 
-# --- Log Rotation (Keep only the last 10 logs) ---
+$IsWin11 = Test-IsWin11
+if ($IsWin11) { Write-Host "Windows 11 Detected. Enabling Win11-specific configurations." -ForegroundColor Cyan }
+else { Write-Host "Windows 10 Detected. Bypassing Win11-specific configurations." -ForegroundColor Cyan }
+
 try {
     $logFiles = Get-ChildItem -Path $LogDir -Filter "*.log" | Sort-Object CreationTime -Descending
     if ($logFiles.Count -gt 10) {
@@ -110,12 +120,14 @@ try {
 if ($Debloat) {
     Write-Host "`n[+] STARTING DEBLOAT MODULE..." -ForegroundColor Magenta
 
-    Write-Host "--- Attempting to uninstall Windows Widgets... ---" -ForegroundColor Yellow
-    $WidgetsCheck = Get-AppxPackage -Name "MicrosoftWindows.Client.WebExperience"
-    if ($null -ne $WidgetsCheck) {
-        winget uninstall --id 9MSSGKG348SP --silent
-        if ($LASTEXITCODE -eq 0) { Write-Host "--- Windows Widgets uninstalled successfully. ---" -ForegroundColor Green }
-    } else { Write-Host "Windows Widgets already removed. Skipping..." -ForegroundColor Green }
+    if ($IsWin11) {
+        Write-Host "--- Attempting to uninstall Windows 11 Widgets... ---" -ForegroundColor Yellow
+        $WidgetsCheck = Get-AppxPackage -Name "MicrosoftWindows.Client.WebExperience"
+        if ($null -ne $WidgetsCheck) {
+            winget uninstall --id 9MSSGKG348SP --silent
+            if ($LASTEXITCODE -eq 0) { Write-Host "--- Windows Widgets uninstalled successfully. ---" -ForegroundColor Green }
+        } else { Write-Host "Windows Widgets already removed. Skipping..." -ForegroundColor Green }
+    }
 
     Write-Host "--- Disabling Windows Consumer Features... ---" -ForegroundColor Yellow
     $CloudContentKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent"
@@ -158,19 +170,22 @@ if ($System) {
         if (-not (Test-Path $OOBEKey)) { New-Item -Path $OOBEKey -Force | Out-Null }
         Set-ItemProperty -Path $OOBEKey -Name "DisablePrivacyExperience" -Value 1 -Type DWord -Force
 
-        $ContextMenuKey = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
-        if (-not (Test-Path $ContextMenuKey)) { New-Item -Path $ContextMenuKey -Force | Out-Null }
-        Set-ItemProperty -Path $ContextMenuKey -Name "(Default)" -Value "" -Force
-
         $FileSystemKey = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
         if (-not (Test-Path $FileSystemKey)) { New-Item -Path $FileSystemKey -Force | Out-Null }
         Set-ItemProperty -Path $FileSystemKey -Name "LongPathsEnabled" -Value 1 -Type DWord -Force
 
         $ExplorerKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
         if (-not (Test-Path $ExplorerKey)) { New-Item -Path $ExplorerKey -Force | Out-Null }
-        Set-ItemProperty -Path $ExplorerKey -Name "TaskbarAl" -Value 0 -Type DWord -Force
         Set-ItemProperty -Path $ExplorerKey -Name "Hidden" -Value 1 -Type DWord -Force
         Set-ItemProperty -Path $ExplorerKey -Name "HideFileExt" -Value 0 -Type DWord -Force
+
+        if ($IsWin11) {
+            Write-Host "--- Applying Windows 11-specific UI tweaks... ---" -ForegroundColor Yellow
+            $ContextMenuKey = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+            if (-not (Test-Path $ContextMenuKey)) { New-Item -Path $ContextMenuKey -Force | Out-Null }
+            Set-ItemProperty -Path $ContextMenuKey -Name "(Default)" -Value "" -Force
+            Set-ItemProperty -Path $ExplorerKey -Name "TaskbarAl" -Value 0 -Type DWord -Force
+        }
 
         Write-Host "--- System registry tweaks applied successfully. ---" -ForegroundColor Green
     } catch { Write-Error "Failed to apply system registry tweaks. Error: $_" }
@@ -223,7 +238,6 @@ if ($Dev) {
             } else { Write-Host "Feature $feature is already enabled. Skipping..." -ForegroundColor Green }
         }
 
-        # OpenSSH Client and Server
         $sshFeatures = @("OpenSSH.Client~~~~0.0.1.0", "OpenSSH.Server~~~~0.0.1.0")
         foreach ($ssh in $sshFeatures) {
             $checkCapability = Get-WindowsCapability -Online -Name $ssh -ErrorAction SilentlyContinue
@@ -234,7 +248,6 @@ if ($Dev) {
             } else { Write-Host "Capability $ssh is already installed. Skipping..." -ForegroundColor Green }
         }
 
-        # Configure SSH Server to start automatically
         try {
             Set-Service -Name sshd -StartupType 'Automatic' -ErrorAction SilentlyContinue
             Start-Service sshd -ErrorAction SilentlyContinue
@@ -282,7 +295,6 @@ wsl --mount `$DrivePath --partition `$PartitionNum --type `$FileSystem
         Set-Content -Path $MountScriptPath -Value $MountScriptContent -Force
         Write-Host "Helper script generated/overwritten at: $MountScriptPath" -ForegroundColor Green
 
-        # Scheduled Task Registration logic (Idempotent)
         $TaskName = "Mount-Linux-WSL"
         $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
         
@@ -306,6 +318,21 @@ wsl --mount `$DrivePath --partition `$PartitionNum --type `$FileSystem
 # ==============================================================================
 if ($RunSoftware) {
     Write-Host "`n[+] STARTING SOFTWARE DEPLOYMENT MODULE..." -ForegroundColor Magenta
+
+    # --- Windows 10 Winget Bootstrapper ---
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Host "Winget not found. Bootstrapping App Installer for Windows 10..." -ForegroundColor Yellow
+        try {
+            $url = "https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+            $installer = Join-Path $InstallerDir "winget.msixbundle"
+            if (-not (Test-Path $installer)) { Invoke-WebRequest -Uri $url -OutFile $installer -ErrorAction Stop }
+            Add-AppxPackage -Path $installer -ErrorAction Stop
+            Write-Host "Winget bootstrapped successfully." -ForegroundColor Green
+            Start-Sleep -Seconds 5 # Wait for PATH refresh
+        } catch {
+            Write-Warning "Failed to bootstrap Winget. Software installation may fail. Error: $_"
+        }
+    }
 
     Write-Host "--- Updating winget sources... ---" -ForegroundColor Yellow
     winget source update | Out-Null
