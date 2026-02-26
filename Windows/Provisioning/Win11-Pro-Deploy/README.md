@@ -22,5 +22,9 @@ Rather than a "one-size-fits-all" approach, this script uses command-line flags 
 
 ### Quick Start
 To view the help menu and see all available options, run the script with no arguments:
+
 ```powershell
-.\Win11-Pro-Deploy.ps1
+.\Win11-Pro-Deploy.ps1             # Displays the help menu and available flags
+.\Win11-Pro-Deploy.ps1 -Standard   # Universal Baseline (Laptops, VMs, secondary workstations)
+.\Win11-Pro-Deploy.ps1 -Complete   # Heavy Workstation (Standard + Cyber, Maker, Gaming, Nvidia)
+.\Win11-Pro-Deploy.ps1 -System     # Example: Run a single specific module individually
