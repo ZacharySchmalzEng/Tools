@@ -2,10 +2,10 @@
 
 **`Win11-Pro-Deploy.ps1`** is a highly modular, automated PowerShell script designed to transform a fresh Windows 11 Pro installation into a hardened, debloated, and fully configured power-user environment. 
 
-Rather than a "one-size-fits-all" approach, this script uses command-line flags to let you pick and choose exactly which system tweaks, security policies, and software stacks you want to deploy.
+Rather than a "one-size-fits-all" approach, this script uses command-line flags to let you pick and choose exactly which system tweaks, security policies, and software stacks you want to deploy. It also features pre-configured "Deployment Profiles" to establish a quick baseline.
 
 ## ✨ Features
-* **Modular Execution**: Run the whole script, or just pass flags to debloat a system or install specific app stacks (like 3D printing tools or cybersecurity labs).
+* **Deployment Profiles**: Run `-Standard` for a universal daily-driver baseline, or `-Complete` for a heavy-duty workstation setup. 
 * **Smart Provisioning**: Checks for existing installations and downloaded files to prevent redundant network calls and save time on reruns.
 * **Dynamic Web Scraping**: Bypasses Winget limitations by dynamically scraping NVIDIA's official site to fetch and silently install the absolute latest NVIDIA App.
 * **Proprietary Install Bypasses**: Uses custom override flags to force strictly GUI-based installers (like Blizzard Battle.net) into silent unattended installations.

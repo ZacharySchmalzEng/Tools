@@ -10,7 +10,7 @@
     Zachary Schmalz
 
 .NOTES
-    Version:        5.8
+    Version:        6.1
     Date:           2026-02-26
     Requirements:   Windows 11 Pro, PowerShell 5.1+, Active Internet Connection.
     Execution:      Must be run with local Administrator privileges.
@@ -26,19 +26,21 @@ param (
     [switch]$Cyber,
     [switch]$Maker,
     [switch]$Gaming,
+    [switch]$Nvidia,
     [switch]$DualBoot,
-    [switch]$Full,
+    [switch]$Standard,
+    [switch]$Complete,
     [switch]$Help
 )
 
 # 1. --- Help Menu & Parameter Logic ---
-$RunSoftware = ($Apps -or $DevApps -or $Cyber -or $Maker -or $Gaming -or $Full)
+$RunSoftware = ($Apps -or $DevApps -or $Cyber -or $Maker -or $Gaming -or $Nvidia -or $Standard -or $Complete)
 $RunAny = ($System -or $Debloat -or $Security -or $Dev -or $DualBoot -or $RunSoftware)
 
 if ($Help -or -not $RunAny) {
     Write-Host ""
     Write-Host "===============================================================" -ForegroundColor Cyan
-    Write-Host " Windows 11 Pro Environment Setup Script v5.8" -ForegroundColor White
+    Write-Host " Windows 11 Pro Environment Setup Script v6.1" -ForegroundColor White
     Write-Host "===============================================================" -ForegroundColor Cyan
     Write-Host "Usage: .\Win11-Pro-Deploy.ps1 [Options]"
     Write-Host ""
@@ -54,20 +56,28 @@ if ($Help -or -not $RunAny) {
     Write-Host "  -DevApps   Scripting/Dev tools (VS Code, Python, GitHub Desktop, Notepad++, PuTTY)"
     Write-Host "  -Cyber     Network & Analysis tools (Wireshark, Nmap, Advanced IP Scanner)"
     Write-Host "  -Maker     3D Printing & CAD tools (PrusaSlicer, OrcaSlicer, Bambu Studio, Fusion 360)"
-    Write-Host "  -Gaming    Gaming & Media (Steam, Battle.net, OBS Studio, NVIDIA App)"
+    Write-Host "  -Gaming    Gaming & Media (Steam, Battle.net, OBS Studio)"
+    Write-Host "  -Nvidia    Dynamically fetches and silently installs the latest NVIDIA App"
     Write-Host ""
-    Write-Host "GLOBAL OPTIONS:"
-    Write-Host "  -Full      Executes ALL modules and installs ALL software (Excludes -DualBoot)"
+    Write-Host "DEPLOYMENT PROFILES:"
+    Write-Host "  -Standard  Universal baseline: System, Debloat, Security, Dev, Apps, DevApps"
+    Write-Host "  -Complete  Heavy workstation: All Standard modules PLUS Cyber, Maker, Gaming, and Nvidia"
     Write-Host "  -Help      Displays this help menu"
     Write-Host "===============================================================" -ForegroundColor Cyan
     Write-Host ""
     return
 }
 
-# The -Full flag logic now intentionally excludes $DualBoot
-if ($Full) {
+# Deployment Profile Logic (Note: Both profiles intentionally exclude the hardware-specific -DualBoot)
+if ($Complete) {
     $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; 
-    $Apps = $true; $DevApps = $true; $Cyber = $true; $Maker = $true; $Gaming = $true;
+    $Apps = $true; $DevApps = $true; $Cyber = $true; $Maker = $true; $Gaming = $true; $Nvidia = $true;
+    $RunSoftware = $true
+}
+
+if ($Standard) {
+    $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; 
+    $Apps = $true; $DevApps = $true;
     $RunSoftware = $true
 }
 
@@ -371,9 +381,8 @@ if ($RunSoftware) {
         }
     }
 
-    if ($Gaming) {
-        Write-Host "--- Processing Gaming Custom Packages ---" -ForegroundColor Magenta
-        
+    if ($Nvidia) {
+        Write-Host "--- Processing NVIDIA App ---" -ForegroundColor Magenta
         Write-Host "--- Checking NVIDIA App status... ---" -ForegroundColor Yellow
         try {
             $NvAppExe = "C:\Program Files\NVIDIA Corporation\NVIDIA app\nvapp.exe"
@@ -410,7 +419,10 @@ if ($RunSoftware) {
                 else { Write-Host "--- NVIDIA App installation complete. ---" -ForegroundColor Green }
             }
         } catch { Write-Error "An error occurred during the NVIDIA App routine: $_" }
+    }
 
+    if ($Gaming) {
+        Write-Host "--- Processing Gaming Custom Packages ---" -ForegroundColor Magenta
         Write-Host "--- Checking status of Blizzard.BattleNet ---"
         $null = winget list --id Blizzard.BattleNet -e --accept-source-agreements
         if ($LASTEXITCODE -eq 0) {
