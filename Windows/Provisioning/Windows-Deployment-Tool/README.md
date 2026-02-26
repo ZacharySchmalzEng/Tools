@@ -1,6 +1,6 @@
-# Windows 10/11 Pro & Server Automated Deployment & Provisioning 
+# Windows 10/11 Pro & Server Automated Deployment & Provisioning
 
-**`Win11-Pro-Deploy.ps1`** is a highly modular, automated PowerShell script designed to transform a fresh Windows 11 Pro or Windows Server installation into a hardened, debloated, and fully configured power-user environment.
+**`Windows-Deployment-Tool.ps1`** is a highly modular, automated PowerShell script designed to transform a fresh Windows 10, Windows 11 Pro, or Windows Server installation into a hardened, debloated, and fully configured power-user environment.
 
 Rather than a "one-size-fits-all" approach, this script uses command-line flags to let you pick and choose exactly which system tweaks, security policies, and software stacks you want to deploy. It also features pre-configured "Deployment Profiles" to establish a quick baseline.
 
@@ -21,13 +21,13 @@ Rather than a "one-size-fits-all" approach, this script uses command-line flags 
 * **Internet**: Active connection required for Winget and dynamic downloads.
 
 ### Quick Start
-To view the help menu and see all available options, run the script with no arguments:
+To view the help menu and see all available options, run the script with the Execution Policy bypass:
 
 ```powershell
-.\Win11-Pro-Deploy.ps1             # Displays the help menu and available flags
-.\Win11-Pro-Deploy.ps1 -Standard   # Universal Baseline (Laptops, VMs, secondary workstations)
-.\Win11-Pro-Deploy.ps1 -Complete   # Heavy Workstation (Standard + Cyber, Maker, Gaming, Creators, Nvidia)
-.\Win11-Pro-Deploy.ps1 -System     # Example: Run a single specific module individually
+powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1             # Displays the help menu
+powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -Standard   # Universal Baseline
+powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -Complete   # Heavy Workstation
+powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -System     # Run a single module
 ```
 
 ## ⚙️ Command-Line Flags
@@ -55,7 +55,7 @@ To view the help menu and see all available options, run the script with no argu
 | Flag | Associated Software |
 | :--- | :--- |
 | `-Apps` | Brave, Chrome, Firefox, Opera, 7-Zip, VLC, Discord, Obsidian, Signal, WhatsApp (via Store ID), CrystalDiskInfo, PowerToys, Everything, Windows Terminal, Rufus. *(Installs TreeSize Free on Desktop OS, WinDirStat on Server OS).* |
-| `-DevApps` | VS Code, Python 3.13, GitHub Desktop, Notepad++, PuTTY, PowerShell 7, **OpenSSL**, **BareTail**. |
+| `-DevApps` | VS Code, Python 3.13, GitHub Desktop, Notepad++, PuTTY, PowerShell 7, **OpenSSL** (FireDaemon). |
 | `-Creators` | **darktable** (Photo), **Blender** (3D), **HandBrake** (Video), **Audacity** (Audio), **Inkscape** (Vector). |
 | `-Cyber` | Wireshark, Nmap, Advanced IP Scanner. |
 | `-Maker` | PrusaSlicer, OrcaSlicer, Bambu Studio, Autodesk Fusion 360. |
@@ -64,7 +64,8 @@ To view the help menu and see all available options, run the script with no argu
 
 ## 📝 Important Notes
 
-* **Execution Policy**: The script automatically attempts to bypass the execution policy for the current process scope. You do not need to globally alter your system execution policy to run this.
+* **Execution Policy**: You **must** invoke the script using `powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1`. The script no longer attempts to bypass the policy internally, as strictly restricted systems will block the file from loading before the internal bypass function can even execute.
+* **Idempotent & Fast**: The script is designed to be completely idempotent. It takes a lightning-fast memory snapshot of your installed Winget packages and reads current registry values before making changes. You can safely run this script repeatedly without wasting time, duplicating installs, or overwriting identical configurations.
 * **Log Rotation**: All actions are thoroughly logged to an `InstallerLogs` directory created in the same folder as the script. The script retains the 10 most recent logs and automatically purges older ones.
 * **Server OS Compatibility**: The script detects if it is running on a Windows Server kernel and will dynamically adjust package selections (like using WinDirStat) to prevent licensing or installer failures.
 * **The Dual-Boot Task (`-DualBoot`)**: This module features **Auto-Discovery**. It scans for non-Windows partitions and targets the most likely Linux candidate. **Note:** Running this module will automatically overwrite any existing `C:\Scripts\Mount-Linux.ps1` file and re-register the `Mount-Linux-WSL` scheduled task to ensure the configuration matches your current hardware state.
