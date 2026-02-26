@@ -1,19 +1,36 @@
 #!/bin/bash
-#Purpose: Enable base SSH functions.
-#Author: Zachary Schmalz - SysEngIV
+# ==============================================================================
+# SYNOPSIS
+#     Automated OpenSSH Server installation and configuration script.
+#
+# DESCRIPTION
+#     This script automates the deployment of the OpenSSH Server daemon on 
+#     Fedora/RHEL-based systems. It executes the following:
+#     - Verifies root execution privileges.
+#     - Checks for existing OpenSSH Server installations.
+#     - Installs the openssh-server package via DNF if missing.
+#     - Enables and starts the sshd systemd service.
+#     - Validates that the daemon is active and actively listening for connections.
+#
+# AUTHOR
+#     Zachary Schmalz
+#
+# NOTES
+#     Version:        1.0
+#     Date:           2026-02-26
+#     Requirements:   Fedora/RHEL Linux, Bash, systemd.
+#     Execution:      Must be run with sudo/root privileges.
+# ==============================================================================
 
-
-#Check if script is running with root permissions.
+# Check if script is running with root permissions.
 if [ "$EUID" -ne 0 ]
   then echo "Please run as root"
   exit
 fi
 
-#remove existing discord instance
 echo "Checking if OpenSSH server is installed."
 if rpm -qa | grep openssh-server; then
     echo "OpenSSH Server is installed. Moving onto next steps..."
-
 else
     echo "OpenSSH Server is not installed. Installing OpenSSH now..."
     dnf install openssh-server -y  

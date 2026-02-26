@@ -1,12 +1,27 @@
 #!/bin/bash
-#Purpose: Install base gamming packages in Fedora build 41+
-#Disclaimer: This is a beta and provides no guarantees 
-#Author: ZacharyS - SysEng
-#Additional documentation can be found at:
-#https://docs.fedoraproject.org/en-US/quick-docs/rpmfusion-setup/
-#https://docs.fedoraproject.org/en-US/gaming/proton/
-#https://lutris.net/downloads
-#https://github.com/gridhead/nvidia-auto-installer-for-fedora-linux
+# ==============================================================================
+# SYNOPSIS
+#     Automated Fedora 41+ gaming environment and dependency setup script.
+#
+# DESCRIPTION
+#     This script performs a comprehensive post-installation setup for a fresh 
+#     Fedora 41 (or newer) environment tailored specifically for gaming.
+#     It executes the following:
+#     - Enables third-party repositories (RPM Fusion, etc.)
+#     - Installs core gaming dependencies and Vulkan drivers
+#     - Configures performance tweaks (e.g., gamemode, kernel parameters)
+#     - Deploys gaming platforms (Steam, Lutris, Wine, etc.)
+#
+# AUTHOR
+#     Zachary Schmalz
+#
+# NOTES
+#     Version:        1.0 (Beta)
+#     Date:           2026-02-26
+#     Requirements:   Fedora Linux 41+, Bash, Active Internet Connection.
+#     Execution:      Must be run with sudo/root privileges.
+# ==============================================================================
+
 
 
 ##Check if script is running with root permissions.##
