@@ -1,5 +1,5 @@
 <####################################################################################################################
-#Author: Zachary Schmalz SysEngIV
+#Author: Zachary Schmalz
 #Version: 1.4
 #Version changes: v1.4 Added a reload of the Windows Registry v1.3 Cleaner output v1.2 added elevation functions 
 #v1.1 Fixed typos v1.0 Original release
@@ -70,3 +70,4 @@ else
 {
 	Start-Process -FilePath "powershell" -ArgumentList "$('-File ""')$(Get-Location)$('\')$($MyInvocation.MyCommand.Name)$('""')" -Verb runAs
 }
+
