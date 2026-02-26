@@ -4,8 +4,11 @@
 .AUTHOR
     Zachary Schmalz
 .NOTES
-    Version:        6.5
+    Name:           Windows-Deployment-Tool.ps1
+    Version:        6.9
     Date:           2026-02-26
+    Changes:        Architectural overhaul for idempotency, O(1) Winget memory snapshots, 
+                    native 64-bit Battle.net detection. Replaced OpenSSL source and removed legacy BareTail.
 #>
 
 param (
@@ -42,6 +45,19 @@ function Test-IsWin11 {
     return [Environment]::OSVersion.Version.Build -ge 22000
 }
 
+function Set-RegTweak {
+    param([string]$Path, [string]$Name, $Value, [string]$Type="DWord")
+    if (-not (Test-Path $Path)) { New-Item -Path $Path -Force | Out-Null }
+    
+    $current = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+    if ($null -eq $current -or $current.$Name -ne $Value) {
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type $Type -Force
+        Write-Host "Applied tweak: $Name -> $Value" -ForegroundColor Green
+    } else {
+        Write-Host "Already applied: $Name" -ForegroundColor DarkGray
+    }
+}
+
 # ==============================================================================
 #  PARAMETER LOGIC & PROFILES
 # ==============================================================================
@@ -58,25 +74,14 @@ $RunSoftware = ($Apps -or $DevApps -or $Cyber -or $Maker -or $Gaming -or $Nvidia
 $RunAny = ($System -or $Debloat -or $Security -or $Dev -or $DualBoot -or $RunSoftware)
 
 if ($Help -or -not $RunAny) {
-    Write-Host "Usage: .\Win11-Pro-Deploy.ps1 [-Standard | -Complete | -System | -Debloat | ...]"
+    Write-Host "`nUsage: .\Windows-Deployment-Tool.ps1 [-Standard | -Complete | -System | -Debloat | ...]"
+    Write-Host "NOTE: Must be executed with: powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1`n" -ForegroundColor Cyan
     return
 }
 
 # ==============================================================================
 #  PRE-FLIGHT CHECKS
 # ==============================================================================
-
-function Invoke-ExecutionPolicyBypass {
-    $currentPolicy = Get-ExecutionPolicy -Scope Process
-    if ($currentPolicy -ne 'Bypass') {
-        Write-Host "Setting process-level Execution Policy to Bypass..." -ForegroundColor Yellow
-        try {
-            Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-            Write-Host "Execution Policy successfully bypassed for this session." -ForegroundColor Green
-        } catch { Write-Warning "Failed to bypass Execution Policy. Error: $_" }
-    }
-}
-Invoke-ExecutionPolicyBypass
 
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Warning "Administrator permissions are required to run provisioning modules."
@@ -97,6 +102,8 @@ $LogFile = "installer_log_$Timestamp.log"
 $LogPath = Join-Path -Path $LogDir -ChildPath $LogFile
 
 Start-Transcript -Path $LogPath
+# Suppress the ASCII progress bars from Invoke-WebRequest to prevent transcript bloat
+$ProgressPreference = 'SilentlyContinue'
 
 Write-Host "Running with Administrator privileges." -ForegroundColor Green
 Set-Location -Path $ScriptDir
@@ -121,20 +128,18 @@ if ($Debloat) {
     Write-Host "`n[+] STARTING DEBLOAT MODULE..." -ForegroundColor Magenta
 
     if ($IsWin11) {
-        Write-Host "--- Attempting to uninstall Windows 11 Widgets... ---" -ForegroundColor Yellow
+        Write-Host "--- Checking Windows 11 Widgets... ---" -ForegroundColor Yellow
         $WidgetsCheck = Get-AppxPackage -Name "MicrosoftWindows.Client.WebExperience"
         if ($null -ne $WidgetsCheck) {
             winget uninstall --id 9MSSGKG348SP --silent
             if ($LASTEXITCODE -eq 0) { Write-Host "--- Windows Widgets uninstalled successfully. ---" -ForegroundColor Green }
-        } else { Write-Host "Windows Widgets already removed. Skipping..." -ForegroundColor Green }
+        } else { Write-Host "Windows Widgets already removed. Skipping..." -ForegroundColor DarkGray }
     }
 
-    Write-Host "--- Disabling Windows Consumer Features... ---" -ForegroundColor Yellow
-    $CloudContentKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent"
-    if (-not (Test-Path $CloudContentKey)) { New-Item -Path $CloudContentKey -Force | Out-Null }
-    Set-ItemProperty -Path $CloudContentKey -Name "DisableWindowsConsumerFeatures" -Value 1 -Type DWord -Force
+    Write-Host "--- Checking Windows Consumer Features... ---" -ForegroundColor Yellow
+    Set-RegTweak -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -Name "DisableWindowsConsumerFeatures" -Value 1
 
-    Write-Host "--- Removing select pre-installed Appx packages... ---" -ForegroundColor Yellow
+    Write-Host "--- Checking select pre-installed Appx packages... ---" -ForegroundColor Yellow
     $bloatware = @(
         "*Microsoft.BingNews*", "*Microsoft.GetHelp*", "*Microsoft.Getstarted*", 
         "*Microsoft.MicrosoftOfficeHub*", "*Microsoft.MicrosoftSolitaireCollection*", 
@@ -142,11 +147,12 @@ if ($Debloat) {
     )
     foreach ($app in $bloatware) {
         if (Get-AppxPackage -Name $app) {
+            Write-Host "Removing $app..."
             Get-AppxPackage -Name $app -AllUsers | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
             Get-AppxProvisionedPackage -Online | Where-Object DisplayName -like $app | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue
         }
     }
-    Write-Host "--- Base bloatware removal complete. ---" -ForegroundColor Green
+    Write-Host "--- Appx debloat routine complete. ---" -ForegroundColor Green
 }
 
 
@@ -156,41 +162,31 @@ if ($Debloat) {
 if ($System) {
     Write-Host "`n[+] STARTING SYSTEM MODULE..." -ForegroundColor Magenta
 
-    Write-Host "--- Applying core system & registry tweaks... ---" -ForegroundColor Yellow
+    Write-Host "--- Checking core system & registry tweaks... ---" -ForegroundColor Yellow
     try {
-        $OneDriveKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive"
-        if (-not (Test-Path $OneDriveKey)) { New-Item -Path $OneDriveKey -Force | Out-Null }
-        Set-ItemProperty -Path $OneDriveKey -Name "DisableFileSyncNGSC" -Value 1 -Type DWord -Force
-
-        $MSAKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        if (-not (Test-Path $MSAKey)) { New-Item -Path $MSAKey -Force | Out-Null }
-        Set-ItemProperty -Path $MSAKey -Name "MSAOptional" -Value 1 -Type DWord -Force
-
-        $OOBEKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\OOBE"
-        if (-not (Test-Path $OOBEKey)) { New-Item -Path $OOBEKey -Force | Out-Null }
-        Set-ItemProperty -Path $OOBEKey -Name "DisablePrivacyExperience" -Value 1 -Type DWord -Force
-
-        $FileSystemKey = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
-        if (-not (Test-Path $FileSystemKey)) { New-Item -Path $FileSystemKey -Force | Out-Null }
-        Set-ItemProperty -Path $FileSystemKey -Name "LongPathsEnabled" -Value 1 -Type DWord -Force
-
+        Set-RegTweak -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -Value 1
+        Set-RegTweak -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "MSAOptional" -Value 1
+        Set-RegTweak -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\OOBE" -Name "DisablePrivacyExperience" -Value 1
+        Set-RegTweak -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1
+        
         $ExplorerKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-        if (-not (Test-Path $ExplorerKey)) { New-Item -Path $ExplorerKey -Force | Out-Null }
-        Set-ItemProperty -Path $ExplorerKey -Name "Hidden" -Value 1 -Type DWord -Force
-        Set-ItemProperty -Path $ExplorerKey -Name "HideFileExt" -Value 0 -Type DWord -Force
+        Set-RegTweak -Path $ExplorerKey -Name "Hidden" -Value 1
+        Set-RegTweak -Path $ExplorerKey -Name "HideFileExt" -Value 0
 
         if ($IsWin11) {
-            Write-Host "--- Applying Windows 11-specific UI tweaks... ---" -ForegroundColor Yellow
+            Write-Host "--- Checking Windows 11-specific UI tweaks... ---" -ForegroundColor Yellow
             $ContextMenuKey = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
-            if (-not (Test-Path $ContextMenuKey)) { New-Item -Path $ContextMenuKey -Force | Out-Null }
-            Set-ItemProperty -Path $ContextMenuKey -Name "(Default)" -Value "" -Force
-            Set-ItemProperty -Path $ExplorerKey -Name "TaskbarAl" -Value 0 -Type DWord -Force
-        }
+            if (-not (Test-Path $ContextMenuKey)) { 
+                New-Item -Path $ContextMenuKey -Force | Out-Null
+                Set-ItemProperty -Path $ContextMenuKey -Name "(Default)" -Value "" -Force
+                Write-Host "Applied tweak: Classic Context Menu" -ForegroundColor Green
+            } else { Write-Host "Already applied: Classic Context Menu" -ForegroundColor DarkGray }
 
-        Write-Host "--- System registry tweaks applied successfully. ---" -ForegroundColor Green
+            Set-RegTweak -Path $ExplorerKey -Name "TaskbarAl" -Value 0
+        }
     } catch { Write-Error "Failed to apply system registry tweaks. Error: $_" }
 
-    Write-Host "--- Enabling Ultimate Performance Power Plan... ---" -ForegroundColor Yellow
+    Write-Host "--- Checking Power Plan... ---" -ForegroundColor Yellow
     try {
         $currentPlan = powercfg -getactivescheme
         if ($currentPlan -notmatch "e9a42b02-d5df-448d-aa00-03f14749eb61") {
@@ -198,7 +194,7 @@ if ($System) {
             $PlanGUID = [regex]::Match($Plan, '([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})').Value
             powercfg -setactive $PlanGUID
             Write-Host "Ultimate Performance enabled." -ForegroundColor Green
-        } else { Write-Host "Ultimate Performance Power Plan is already active. Skipping..." -ForegroundColor Green }
+        } else { Write-Host "Ultimate Performance Power Plan is already active. Skipping..." -ForegroundColor DarkGray }
     } catch { Write-Warning "Could not set power plan. Error: $_" }
 }
 
@@ -209,15 +205,18 @@ if ($System) {
 if ($Security) {
     Write-Host "`n[+] STARTING SECURITY MODULE (Policies)..." -ForegroundColor Magenta
 
-    Write-Host "--- Disabling Windows Telemetry... ---" -ForegroundColor Yellow
-    $TelemetryKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection"
-    if (-not (Test-Path $TelemetryKey)) { New-Item -Path $TelemetryKey -Force | Out-Null }
-    Set-ItemProperty -Path $TelemetryKey -Name "AllowTelemetry" -Value 0 -Type DWord -Force
+    Write-Host "--- Checking Windows Telemetry... ---" -ForegroundColor Yellow
+    Set-RegTweak -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 0
 
-    Write-Host "--- Enabling Defender PUA Protection... ---" -ForegroundColor Yellow
+    Write-Host "--- Checking Defender PUA Protection... ---" -ForegroundColor Yellow
     try {
-        Set-MpPreference -PUAProtection Enabled -ErrorAction Stop
-        Write-Host "--- PUA Protection enabled. ---" -ForegroundColor Green
+        $mpPref = Get-MpPreference
+        if ($mpPref.PUAProtection -ne 1) {
+            Set-MpPreference -PUAProtection Enabled -ErrorAction Stop
+            Write-Host "PUA Protection enabled." -ForegroundColor Green
+        } else {
+            Write-Host "PUA Protection is already enabled. Skipping..." -ForegroundColor DarkGray
+        }
     } catch { Write-Warning "Failed to enable PUA Protection. Error: $_" }
 }
 
@@ -227,7 +226,7 @@ if ($Security) {
 # ==============================================================================
 if ($Dev) {
     Write-Host "`n[+] STARTING DEV MODULE (OS Features)..." -ForegroundColor Magenta
-    Write-Host "--- Enabling Windows Optional Features & Capabilities... ---" -ForegroundColor Yellow
+    Write-Host "--- Checking Windows Optional Features & Capabilities... ---" -ForegroundColor Yellow
     try {
         $features = @("Microsoft-Windows-Subsystem-Linux", "VirtualMachinePlatform", "Containers-DisposableClientVM")
         foreach ($feature in $features) {
@@ -235,7 +234,7 @@ if ($Dev) {
             if ($checkFeature.State -ne 'Enabled') {
                 Enable-WindowsOptionalFeature -Online -FeatureName $feature -NoRestart -All -WarningAction SilentlyContinue | Out-Null
                 Write-Host "Enabled Feature: $feature" -ForegroundColor Green
-            } else { Write-Host "Feature $feature is already enabled. Skipping..." -ForegroundColor Green }
+            } else { Write-Host "Feature $feature is already enabled. Skipping..." -ForegroundColor DarkGray }
         }
 
         $sshFeatures = @("OpenSSH.Client~~~~0.0.1.0", "OpenSSH.Server~~~~0.0.1.0")
@@ -245,13 +244,16 @@ if ($Dev) {
                 Write-Host "Installing Capability: $ssh..."
                 Add-WindowsCapability -Online -Name $ssh -ErrorAction SilentlyContinue | Out-Null
                 Write-Host "Installed Capability: $ssh" -ForegroundColor Green
-            } else { Write-Host "Capability $ssh is already installed. Skipping..." -ForegroundColor Green }
+            } else { Write-Host "Capability $ssh is already installed. Skipping..." -ForegroundColor DarkGray }
         }
 
         try {
-            Set-Service -Name sshd -StartupType 'Automatic' -ErrorAction SilentlyContinue
-            Start-Service sshd -ErrorAction SilentlyContinue
-            Write-Host "SSH Server (sshd) service configured and started." -ForegroundColor Green
+            $sshService = Get-Service -Name sshd -ErrorAction SilentlyContinue
+            if ($sshService.StartType -ne 'Automatic' -or $sshService.Status -ne 'Running') {
+                Set-Service -Name sshd -StartupType 'Automatic' -ErrorAction SilentlyContinue
+                Start-Service sshd -ErrorAction SilentlyContinue
+                Write-Host "SSH Server (sshd) service configured and started." -ForegroundColor Green
+            } else { Write-Host "SSH Server is already running and set to Automatic. Skipping..." -ForegroundColor DarkGray }
         } catch { Write-Warning "Could not configure sshd service. It may require a reboot first." }
 
     } catch { Write-Warning "Failed during Windows Features configuration. Error: $_" }
@@ -276,7 +278,7 @@ if ($DualBoot) {
 
     Write-Host "--- Configuring Scheduled Task for Linux WSL Mount... ---" -ForegroundColor Yellow
     try {
-        $CustomScriptsDir = "C:\Scripts"
+        $CustomScriptsDir = "$env:SystemDrive\Scripts"
         if (-not (Test-Path $CustomScriptsDir)) { New-Item -Path $CustomScriptsDir -ItemType Directory -Force | Out-Null }
         
         $MountScriptPath = Join-Path -Path $CustomScriptsDir -ChildPath "Mount-Linux.ps1"
@@ -299,7 +301,7 @@ wsl --mount `$DrivePath --partition `$PartitionNum --type `$FileSystem
         $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
         
         if ($null -ne $ExistingTask) {
-            Write-Host "Task '$TaskName' already exists. Re-registering to ensure updated disk paths..." -ForegroundColor Yellow
+            Write-Host "Task '$TaskName' already exists. Re-registering to ensure updated disk paths..." -ForegroundColor DarkGray
             Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
         }
 
@@ -328,15 +330,16 @@ if ($RunSoftware) {
             if (-not (Test-Path $installer)) { Invoke-WebRequest -Uri $url -OutFile $installer -ErrorAction Stop }
             Add-AppxPackage -Path $installer -ErrorAction Stop
             Write-Host "Winget bootstrapped successfully." -ForegroundColor Green
-            Start-Sleep -Seconds 5 # Wait for PATH refresh
-        } catch {
-            Write-Warning "Failed to bootstrap Winget. Software installation may fail. Error: $_"
-        }
+            Start-Sleep -Seconds 5
+        } catch { Write-Warning "Failed to bootstrap Winget. Software installation may fail. Error: $_" }
     }
 
     Write-Host "--- Updating winget sources... ---" -ForegroundColor Yellow
     winget source update | Out-Null
     Write-Host "--- Winget sources updated. ---" -ForegroundColor Green
+
+    Write-Host "--- Taking memory snapshot of installed software... ---" -ForegroundColor Yellow
+    $InstalledSoftware = winget list --accept-source-agreements | Out-String -Width 4096
 
     $IsServer = Test-IsServerOS
     if ($IsServer) { Write-Host "--- Server OS detected: Substituting WinDirStat for TreeSize Free ---" -ForegroundColor Cyan }
@@ -349,41 +352,37 @@ if ($RunSoftware) {
                      "9NKSQGP7F2NH", "CrystalDewWorld.CrystalDiskInfo.ShizukuEdition", 
                      "Microsoft.PowerToys", "voidtools.Everything", "Microsoft.WindowsTerminal", "Rufus.Rufus"
         
-        if ($IsServer) { $packages += "WinDirStat.WinDirStat" } 
-        else { $packages += "JAMSoftware.TreeSize.Free" }
+        if ($IsServer) { $packages += "WinDirStat.WinDirStat" } else { $packages += "JAMSoftware.TreeSize.Free" }
     }
     
     if ($DevApps) {
         $packages += "Microsoft.VisualStudioCode", "GitHub.GitHubDesktop", "Python.Python.3.13", 
-                     "Microsoft.PowerShell", "Notepad++.Notepad++", "PuTTY.PuTTY", "OpenSSL.OpenSSL", "BareTail.BareTail"
+                     "Microsoft.PowerShell", "Notepad++.Notepad++", "PuTTY.PuTTY", "FireDaemon.OpenSSL"
     }
     
-    if ($Cyber) {
-        $packages += "WiresharkFoundation.Wireshark", "Insecure.Nmap", "Famatech.AdvancedIPScanner"
-    }
-
-    if ($Maker) {
-        $packages += "Prusa3D.PrusaSlicer", "SoftFever.OrcaSlicer", "Bambulab.Bambustudio", "Autodesk.Fusion360"
-    }
-    
-    if ($Creators) {
-        $packages += "darktable.darktable", "BlenderFoundation.Blender", "HandBrake.HandBrake", "Audacity.Audacity", "Inkscape.Inkscape"
-    }
-
-    if ($Gaming) {
-        $packages += "Valve.Steam", "OBSProject.OBSStudio"
-    }
+    if ($Cyber) { $packages += "WiresharkFoundation.Wireshark", "Insecure.Nmap", "Famatech.AdvancedIPScanner" }
+    if ($Maker) { $packages += "Prusa3D.PrusaSlicer", "SoftFever.OrcaSlicer", "Bambulab.Bambustudio", "Autodesk.Fusion360" }
+    if ($Creators) { $packages += "darktable.darktable", "BlenderFoundation.Blender", "HandBrake.HandBrake", "Audacity.Audacity", "Inkscape.Inkscape" }
+    if ($Gaming) { $packages += "Valve.Steam", "OBSProject.OBSStudio" }
 
     if ($packages.Count -gt 0) {
         foreach ($pkg in $packages) {
-            Write-Host "--- Checking status of $pkg ---"
-            $null = winget list --id $pkg -e --accept-source-agreements
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "$pkg is already installed. Skipping..." -ForegroundColor Green
+            $DisplayName = if ($pkg -eq "9NKSQGP7F2NH") { "WhatsApp" } else { $pkg }
+            Write-Host "--- Checking status of $DisplayName ---"
+            
+            # Hybrid Verification: Fast memory check first
+            if ($InstalledSoftware -match [regex]::Escape($pkg)) {
+                Write-Host "$DisplayName is already installed. Skipping..." -ForegroundColor DarkGray
             } else {
-                Write-Host "Installing $pkg via winget..."
-                winget install --id $pkg -e --silent --accept-source-agreements --accept-package-agreements --force
-                if ($LASTEXITCODE -ne 0) { Write-Warning "Winget returned a non-zero exit code for $pkg." }
+                # Fallback: Deep check for truncated IDs
+                $null = winget list --id $pkg -e --accept-source-agreements
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "$DisplayName is already installed (Verified via Deep Check). Skipping..." -ForegroundColor DarkGray
+                } else {
+                    Write-Host "Installing $DisplayName via winget..."
+                    winget install --id $pkg -e --silent --accept-source-agreements --accept-package-agreements --force
+                    if ($LASTEXITCODE -ne 0) { Write-Warning "Winget returned a non-zero exit code for $DisplayName." }
+                }
             }
         }
     }
@@ -392,9 +391,17 @@ if ($RunSoftware) {
         Write-Host "--- Processing NVIDIA App ---" -ForegroundColor Magenta
         Write-Host "--- Checking NVIDIA App status... ---" -ForegroundColor Yellow
         try {
-            $NvAppExe = "C:\Program Files\NVIDIA Corporation\NVIDIA app\nvapp.exe"
-            if (Test-Path $NvAppExe) {
-                Write-Host "NVIDIA App is already installed. Skipping download and installation." -ForegroundColor Green
+            $NvAppPaths = @(
+                "$env:ProgramFiles\NVIDIA Corporation\NVIDIA app\nvapp.exe",
+                "$env:ProgramFiles\NVIDIA Corporation\NVIDIA app\NVIDIA app.exe",
+                "$env:ProgramFiles\NVIDIA Corporation\NVIDIA app\CEF\NVIDIA app.exe"
+            )
+            
+            $NvAppInstalled = $false
+            foreach ($path in $NvAppPaths) { if (Test-Path $path) { $NvAppInstalled = $true; break } }
+
+            if ($NvAppInstalled) {
+                Write-Host "NVIDIA App is already installed. Skipping download and installation." -ForegroundColor DarkGray
             } else {
                 Write-Host "NVIDIA App not found. Fetching the latest download link dynamically..."
                 $nvWebPage = Invoke-WebRequest -Uri "https://www.nvidia.com/en-us/software/nvidia-app/" -UseBasicParsing -ErrorAction SilentlyContinue
@@ -405,7 +412,7 @@ if ($RunSoftware) {
                     $url = $match.Value
                     Write-Host "Found latest NVIDIA installer: $url" -ForegroundColor Cyan
                 } else {
-                    $url = "https://us.download.nvidia.com/nvapp/client/11.0.5.266/NVIDIA_app_v11.0.5.266.exe"
+                    $url = "https://us.download.nvidia.com/nvapp/client/11.0.6.383/NVIDIA_app_v11.0.6.383.exe"
                     Write-Host "Dynamic fetch failed. Using default fallback URL: $url" -ForegroundColor DarkYellow
                 }
 
@@ -416,7 +423,7 @@ if ($RunSoftware) {
                     Write-Host "Downloading $fileName to $InstallerDir..."
                     Invoke-WebRequest -Uri $url -OutFile $InstallerPath -ErrorAction Stop
                     Write-Host "Download complete." -ForegroundColor Green
-                } else { Write-Host "Existing installer found. Skipping download." -ForegroundColor Green }
+                } else { Write-Host "Existing installer found. Skipping download." -ForegroundColor DarkGray }
 
                 Write-Host "Starting silent installation from $InstallerPath..."
                 $nvProcess = Start-Process -FilePath $InstallerPath -ArgumentList '-s -n -passive -noreboot' -Wait -PassThru -ErrorAction Stop
@@ -431,13 +438,23 @@ if ($RunSoftware) {
     if ($Gaming) {
         Write-Host "--- Processing Gaming Custom Packages ---" -ForegroundColor Magenta
         Write-Host "--- Checking status of Blizzard.BattleNet ---"
-        $null = winget list --id Blizzard.BattleNet -e --accept-source-agreements
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Blizzard.Battle.net is already installed. Skipping..." -ForegroundColor Green
+        
+        $BnetPaths = @(
+            "${env:ProgramFiles(x86)}\Battle.net\Battle.net.exe",
+            "${env:ProgramFiles(x86)}\Battle.net\Battle.net Launcher.exe",
+            "$env:ProgramFiles\Battle.net\Battle.net.exe",
+            "$env:ProgramFiles\Battle.net\Battle.net Launcher.exe"
+        )
+        
+        $BnetInstalled = $false
+        foreach ($path in $BnetPaths) { if (Test-Path $path) { $BnetInstalled = $true; break } }
+
+        if ($BnetInstalled) {
+            Write-Host "Blizzard.Battle.net is already installed. Skipping..." -ForegroundColor DarkGray
         } else {
             try {
                 Write-Host "Attempting to install Blizzard.BattleNet..."
-                winget install --id Blizzard.BattleNet -e --location "C:\Program Files (x86)\Battle.net" --override "--silent" --accept-source-agreements --accept-package-agreements
+                winget install --id Blizzard.BattleNet -e --override "--silent" --accept-source-agreements --accept-package-agreements
                 if ($LASTEXITCODE -ne 0) { throw "Winget failed to install Battle.net. Exit code: $LASTEXITCODE" }
                 Write-Host "--- Successfully installed Blizzard.Battle.net. ---" -ForegroundColor Green
             } catch { Write-Error "Failed to install Blizzard.Battle.net. Error: $_" }
@@ -456,7 +473,7 @@ if ($Security) {
         Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
         Install-Module -Name PSWindowsUpdate -Repository PSGallery -Force -Scope AllUsers -ErrorAction SilentlyContinue
         Write-Host "--- Module installed. ---" -ForegroundColor Green
-    } else { Write-Host "PSWindowsUpdate module is already installed. Skipping download..." -ForegroundColor Green }
+    } else { Write-Host "PSWindowsUpdate module is already installed. Skipping download..." -ForegroundColor DarkGray }
 
     Write-Host "--- Checking for and installing Windows Updates... ---" -ForegroundColor Yellow
     try {
@@ -475,6 +492,8 @@ Write-Host "Execution of selected modules is complete!"
 Write-Host "Log file is saved at: $LogPath"
 Write-Host "****************************************************************"
 
+# Turn progress back on in case user continues using the shell
+$ProgressPreference = 'Continue'
 Stop-Transcript
 
 Write-Host ""
