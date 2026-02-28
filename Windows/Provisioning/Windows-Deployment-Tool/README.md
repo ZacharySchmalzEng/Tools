@@ -1,4 +1,4 @@
-# Windows 10/11 Pro & Server Automated Deployment & Provisioning
+# Windows 10/11 Pro & Server Automated Deployment & Provisioning Tool
 
 **`Windows-Deployment-Tool.ps1`** is a highly modular, automated PowerShell script designed to transform a fresh Windows 10, Windows 11 Pro, or Windows Server installation into a hardened, debloated, and fully configured power-user environment.
 
@@ -70,5 +70,6 @@ powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -Syst
 * **Server OS Compatibility**: The script detects if it is running on a Windows Server kernel and will dynamically adjust package selections (like using WinDirStat) to prevent licensing or installer failures.
 * **The Dual-Boot Task (`-DualBoot`)**: This module features **Auto-Discovery**. It scans for non-Windows partitions and targets the most likely Linux candidate. **Note:** Running this module will automatically overwrite any existing `C:\Scripts\Mount-Linux.ps1` file and re-register the `Mount-Linux-WSL` scheduled task to ensure the configuration matches your current hardware state.
 ## ⚠️ Disclaimer
+
 
 This script modifies the system registry, uninstalls provisioned Windows packages, and alters security policies. Please review the code to ensure the configurations match your personal environment needs before executing.
