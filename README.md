@@ -9,6 +9,8 @@ These tools are built with a focus on modularity, security, and reducing the fri
 The repository is divided by Operating System and function:
 
 ### 🐧 Linux (Fedora/RHEL)
+* **`/Linux/Provisioning/`**
+  * `fedora-deployment-tool.sh`: A comprehensive, modular deployment script for fresh Fedora 41+ installations. Features tiered security hardening, MFA SSH integration, and dynamic software stack provisioning via command-line flags. *(See the dedicated README inside this folder for usage flags).*
 * **`/Linux/Gaming/`**
   * `InstallBaseGamingFedora41+.sh`: Automates the installation of core gaming dependencies, Vulkan drivers, and performance tweaks on fresh Fedora installs.
 * **`/Linux/Maintenance/`**

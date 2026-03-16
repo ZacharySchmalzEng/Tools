@@ -2,9 +2,14 @@
 
 This directory contains a collection of Bash scripts designed to configure, maintain, and optimize Fedora and RHEL-based Linux environments. 
 
-Whether you are setting up a fresh Fedora installation for gaming or automating your daily package updates, these tools provide quick, reproducible results.
+Whether you are deploying a completely fresh Fedora installation, configuring a dedicated gaming machine, or automating your daily package updates, these tools provide quick, reproducible results.
 
 ## 📂 Directory Structure
+
+### 🚀 Provisioning
+* **`fedora-deployment-tool.sh`** *(v1.0 Beta)*
+  * **Purpose:** A highly modular, automated deployment tool for fresh Fedora 41+ installations.
+  * **Actions:** Uses command-line flags to selectively deploy application stacks (Apps, Dev, Cyber, Maker, Gaming), configure Desktop Environment QoL features, and apply tiered security hardening (including `auditd`, network sysctl drops, and MFA for SSH).
 
 ### 🎮 Gaming
 * **`InstallBaseGamingFedora41+.sh`**
