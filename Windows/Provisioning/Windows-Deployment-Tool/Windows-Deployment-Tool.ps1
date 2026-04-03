@@ -1,14 +1,13 @@
 <#
 .SYNOPSIS
-    Automated Windows 10/11 Pro and Server provisioning and environment setup script.
+    Automated Windows 10/11 Pro, Home, and Server provisioning and environment setup script.
 .AUTHOR
     Zachary Schmalz
 .NOTES
     Name:           Windows-Deployment-Tool.ps1
-    Version:        6.9
-    Date:           2026-02-26
-    Changes:        Architectural overhaul for idempotency, O(1) Winget memory snapshots, 
-                    native 64-bit Battle.net detection. Replaced OpenSSL source and removed legacy BareTail.
+    Version:        6.9.3
+    Date:           2026-04-03
+    Changes:        Added Sudo "inline" mode (Data Option 3) enablement to the Dev module.
 #>
 
 param (
@@ -73,9 +72,35 @@ if ($Standard) {
 $RunSoftware = ($Apps -or $DevApps -or $Cyber -or $Maker -or $Gaming -or $Nvidia -or $Creators)
 $RunAny = ($System -or $Debloat -or $Security -or $Dev -or $DualBoot -or $RunSoftware)
 
-if ($Help -or -not $RunAny) {
-    Write-Host "`nUsage: .\Windows-Deployment-Tool.ps1 [-Standard | -Complete | -System | -Debloat | ...]"
-    Write-Host "NOTE: Must be executed with: powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1`n" -ForegroundColor Cyan
+# If no parameters are passed, automatically trigger the Help menu
+if (-not $RunAny) {
+    $Help = $true
+}
+
+if ($Help) {
+    Write-Host "`n================================================================" -ForegroundColor Cyan
+    Write-Host "  WINDOWS DEPLOYMENT TOOL HELP MENU" -ForegroundColor Cyan
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host "Usage: .\Windows-Deployment-Tool.ps1 [OPTIONS]"
+    Write-Host "NOTE: Must be executed with: powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1`n" -ForegroundColor Yellow
+    Write-Host "PROFILES:"
+    Write-Host "  -Standard    Baselines (System, Debloat, Security, Dev, Apps, DevApps)"
+    Write-Host "  -Complete    Full Suite (All modules including Gaming, Nvidia, Creators, etc.)"
+    Write-Host "`nINDIVIDUAL MODULES:"
+    Write-Host "  -System      Registry tweaks, power plans, and UI adjustments."
+    Write-Host "  -Debloat     Removes Windows consumer bloatware and widgets."
+    Write-Host "  -Security    Hardens Defender, disables telemetry, and applies updates."
+    Write-Host "  -Dev         Enables WSL, Virtual Machine Platform, Sudo (Inline), and SSH."
+    Write-Host "  -DualBoot    Configures auto-mounting for Linux partitions via WSL."
+    Write-Host "  -Apps        Installs general productivity apps (Brave, Discord, WhatsApp, etc.)"
+    Write-Host "  -DevApps     Installs development tools (VS Code, Python, OpenSSL, etc.)"
+    Write-Host "  -Cyber       Installs security tools (Wireshark, Nmap, etc.)"
+    Write-Host "  -Maker       Installs 3D printing tools (OrcaSlicer, Fusion360, etc.)"
+    Write-Host "  -Creators    Installs creative tools (Blender, Darktable, Audacity, etc.)"
+    Write-Host "  -Gaming      Installs Steam, OBS, and Battle.net."
+    Write-Host "  -Nvidia      Installs the latest NVIDIA App."
+    Write-Host "  -Help        Displays this help menu."
+    Write-Host ""
     return
 }
 
@@ -102,15 +127,19 @@ $LogFile = "installer_log_$Timestamp.log"
 $LogPath = Join-Path -Path $LogDir -ChildPath $LogFile
 
 Start-Transcript -Path $LogPath
-# Suppress the ASCII progress bars from Invoke-WebRequest to prevent transcript bloat
+
+# Suppress ASCII progress bars from Invoke-WebRequest to prevent transcript log bloat
 $ProgressPreference = 'SilentlyContinue'
+
+# Force TLS 1.2 protocol to resolve NuGet & PowerShell Gallery download failures on native PowerShell 5.1
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 Write-Host "Running with Administrator privileges." -ForegroundColor Green
 Set-Location -Path $ScriptDir
 
 $IsWin11 = Test-IsWin11
 if ($IsWin11) { Write-Host "Windows 11 Detected. Enabling Win11-specific configurations." -ForegroundColor Cyan }
-else { Write-Host "Windows 10 Detected. Bypassing Win11-specific configurations." -ForegroundColor Cyan }
+else { Write-Host "Windows 10/Home Detected. Bypassing Win11-specific configurations." -ForegroundColor Cyan }
 
 try {
     $logFiles = Get-ChildItem -Path $LogDir -Filter "*.log" | Sort-Object CreationTime -Descending
@@ -226,6 +255,14 @@ if ($Security) {
 # ==============================================================================
 if ($Dev) {
     Write-Host "`n[+] STARTING DEV MODULE (OS Features)..." -ForegroundColor Magenta
+    
+    if ($IsWin11) {
+        Write-Host "--- Checking Windows 11 Sudo Configuration... ---" -ForegroundColor Yellow
+        try {
+            Set-RegTweak -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Sudo" -Name "EnableSudo" -Value 3
+        } catch { Write-Warning "Failed to configure Windows Sudo. Error: $_" }
+    }
+
     Write-Host "--- Checking Windows Optional Features & Capabilities... ---" -ForegroundColor Yellow
     try {
         $features = @("Microsoft-Windows-Subsystem-Linux", "VirtualMachinePlatform", "Containers-DisposableClientVM")
