@@ -5,16 +5,17 @@
     Zachary Schmalz
 .NOTES
     Name:           Windows-Deployment-Tool.ps1
-    Version:        6.9.3
-    Date:           2026-04-03
-    Changes:        Added Sudo "inline" mode (Data Option 3) enablement to the Dev module.
+    Version:        6.9.6
+    Date:           2026-04-04
+    Changes:        Updated Power Plan logic to unlock Ultimate Performance but prompt the user 
+                    before activating it, defaulting to preserving current energy-efficient settings.
 #>
 
 param (
     [switch]$System, [switch]$Debloat, [switch]$Security, [switch]$Dev,
     [switch]$Apps, [switch]$DevApps, [switch]$Cyber, [switch]$Maker,
     [switch]$Gaming, [switch]$Nvidia, [switch]$Creators, [switch]$DualBoot,
-    [switch]$Standard, [switch]$Complete, [switch]$Help
+    [switch]$AutoUpdate, [switch]$Standard, [switch]$Complete, [switch]$Help
 )
 
 # ==============================================================================
@@ -63,14 +64,14 @@ function Set-RegTweak {
 
 if ($Complete) {
     $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; 
-    $Apps = $true; $DevApps = $true; $Cyber = $true; $Maker = $true; $Gaming = $true; $Nvidia = $true; $Creators = $true;
+    $Apps = $true; $DevApps = $true; $Cyber = $true; $Maker = $true; $Gaming = $true; $Nvidia = $true; $Creators = $true; $AutoUpdate = $true;
 }
 if ($Standard) {
     $System = $true; $Debloat = $true; $Security = $true; $Dev = $true; $Apps = $true; $DevApps = $true;
 }
 
 $RunSoftware = ($Apps -or $DevApps -or $Cyber -or $Maker -or $Gaming -or $Nvidia -or $Creators)
-$RunAny = ($System -or $Debloat -or $Security -or $Dev -or $DualBoot -or $RunSoftware)
+$RunAny = ($System -or $Debloat -or $Security -or $Dev -or $DualBoot -or $RunSoftware -or $AutoUpdate)
 
 # If no parameters are passed, automatically trigger the Help menu
 if (-not $RunAny) {
@@ -85,7 +86,7 @@ if ($Help) {
     Write-Host "NOTE: Must be executed with: powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1`n" -ForegroundColor Yellow
     Write-Host "PROFILES:"
     Write-Host "  -Standard    Baselines (System, Debloat, Security, Dev, Apps, DevApps)"
-    Write-Host "  -Complete    Full Suite (All modules including Gaming, Nvidia, Creators, etc.)"
+    Write-Host "  -Complete    Full Suite (All modules including Gaming, AutoUpdate, etc.)"
     Write-Host "`nINDIVIDUAL MODULES:"
     Write-Host "  -System      Registry tweaks, power plans, and UI adjustments."
     Write-Host "  -Debloat     Removes Windows consumer bloatware and widgets."
@@ -99,6 +100,7 @@ if ($Help) {
     Write-Host "  -Creators    Installs creative tools (Blender, Darktable, Audacity, etc.)"
     Write-Host "  -Gaming      Installs Steam, OBS, and Battle.net."
     Write-Host "  -Nvidia      Installs the latest NVIDIA App."
+    Write-Host "  -AutoUpdate  Configures a weekly scheduled task for silent Winget and OS updates."
     Write-Host "  -Help        Displays this help menu."
     Write-Host ""
     return
@@ -217,14 +219,42 @@ if ($System) {
 
     Write-Host "--- Checking Power Plan... ---" -ForegroundColor Yellow
     try {
-        $currentPlan = powercfg -getactivescheme
-        if ($currentPlan -notmatch "e9a42b02-d5df-448d-aa00-03f14749eb61") {
+        # 1. Ensure the Ultimate plan exists on the system
+        $existingPlans = powercfg -list
+        $ultimatePlan = $existingPlans | Select-String "Ultimate Performance" | Select-Object -First 1
+        
+        $PlanGUID = $null
+        if ($ultimatePlan) {
+            $PlanGUID = [regex]::Match($ultimatePlan, '([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})').Value
+            Write-Host "Ultimate Performance plan is already available on this system." -ForegroundColor DarkGray
+        } else {
             $Plan = powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61
             $PlanGUID = [regex]::Match($Plan, '([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})').Value
-            powercfg -setactive $PlanGUID
-            Write-Host "Ultimate Performance enabled." -ForegroundColor Green
-        } else { Write-Host "Ultimate Performance Power Plan is already active. Skipping..." -ForegroundColor DarkGray }
-    } catch { Write-Warning "Could not set power plan. Error: $_" }
+            Write-Host "Ultimate Performance plan unlocked." -ForegroundColor Green
+        }
+
+        # 2. Check active plan and prompt if necessary
+        $activePlan = powercfg -getactivescheme
+        if ($activePlan -notmatch $PlanGUID) {
+            $title = "Power Plan Configuration"
+            $message = "Would you like to activate the Ultimate Performance power plan now? (Select No to maintain your current energy-efficient settings)."
+            $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Activates Ultimate Performance."
+            $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Leaves current plan active."
+            $choices = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+            
+            # Use 1 (No) as default, aligning with energy-efficiency preference
+            $decision = $Host.UI.PromptForChoice($title, $message, $choices, 1) 
+            
+            if ($decision -eq 0) {
+                powercfg -setactive $PlanGUID
+                Write-Host "Ultimate Performance enabled." -ForegroundColor Green
+            } else {
+                Write-Host "Leaving current power plan active." -ForegroundColor DarkGray
+            }
+        } else { 
+            Write-Host "Ultimate Performance Power Plan is already active. Skipping..." -ForegroundColor DarkGray 
+        }
+    } catch { Write-Warning "Could not configure power plan. Error: $_" }
 }
 
 
@@ -518,6 +548,62 @@ if ($Security) {
         Install-WindowsUpdate -AcceptAll -IgnoreReboot
         Write-Host "--- Windows Update check complete. ---" -ForegroundColor Green
     } catch { Write-Error "Failed to run PSWindowsUpdate module. Error: $_" }
+}
+
+# ==============================================================================
+#  MODULE: AUTO UPDATE TASK
+# ==============================================================================
+if ($AutoUpdate) {
+    Write-Host "`n[+] STARTING AUTO UPDATE TASK MODULE..." -ForegroundColor Magenta
+    Write-Host "--- Configuring Scheduled Task for System Maintenance... ---" -ForegroundColor Yellow
+    
+    try {
+        $CustomScriptsDir = "$env:SystemDrive\Scripts"
+        if (-not (Test-Path $CustomScriptsDir)) { New-Item -Path $CustomScriptsDir -ItemType Directory -Force | Out-Null }
+        
+        $UpdateScriptPath = Join-Path -Path $CustomScriptsDir -ChildPath "Invoke-SystemMaintenance.ps1"
+        $UpdateScriptContent = @"
+<#
+.SYNOPSIS
+    Automated silent background script to upgrade all Winget packages and Windows Updates.
+#>
+`$ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# 1. Update Winget Sources
+winget source update | Out-Null
+
+# 2. Upgrade all Winget Packages
+winget upgrade --all --silent --accept-source-agreements --accept-package-agreements --force
+
+# 3. Install Windows Updates (if module is present)
+if (Get-Module -ListAvailable -Name PSWindowsUpdate) {
+    Import-Module PSWindowsUpdate
+    Install-WindowsUpdate -AcceptAll -IgnoreReboot
+}
+"@
+        Set-Content -Path $UpdateScriptPath -Value $UpdateScriptContent -Force
+        Write-Host "Helper script generated/overwritten at: $UpdateScriptPath" -ForegroundColor Green
+
+        $TaskName = "System-Maintenance-AutoUpdate"
+        $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        
+        if ($null -ne $ExistingTask) {
+            Write-Host "Task '$TaskName' already exists. Re-registering to ensure updated paths..." -ForegroundColor DarkGray
+            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+        }
+
+        $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$UpdateScriptPath`""
+        
+        # Run weekly on Friday at 3:00 AM
+        $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Friday -At 3:00AM
+        
+        $Principal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Administrators" -RunLevel Highest
+        $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries:$false -DontStopIfGoingOnBatteries:$false
+        
+        Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
+        Write-Host "Scheduled Task '$TaskName' registered successfully." -ForegroundColor Green
+    } catch { Write-Error "Failed to configure Auto Update task. Error: $_" }
 }
 
 
