@@ -168,11 +168,11 @@ Description=Run Restic Google Drive Backup Daily
 
 [Timer]
 OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=7200
 Persistent=true
 
 [Install]
 WantedBy=timers.target
-EOF
 
 # 8. Reload and Enable Systemd Timer
 echo "[*] Activating Systemd automated timer..."
