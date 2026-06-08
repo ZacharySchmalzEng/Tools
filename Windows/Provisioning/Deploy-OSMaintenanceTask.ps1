@@ -1,4 +1,4 @@
-<#
+#
 .SYNOPSIS
     Deploys an idempotent, Base64-encoded Windows OS maintenance scheduled task.
 
@@ -10,7 +10,12 @@
     4. Conditional DISM/SFC system file repair.
     5. Aggressive purging of temporary data older than 14 days.
     6. Native Application Event Log telemetry injection (Source: OS-Maintenance).
-    7. Weekly automated Winget and Windows Update auto-update task registration.
+    7. Best-effort weekly automated Winget and Windows Update auto-update task registration.
+
+    The script now detects the host OS version and will disable registration of
+    auto-update tasks that require an interactive user context on Windows 10.
+    Pop-up/RunOnce alerts remain present but are not relied upon for SYSTEM
+    scheduled executions.
 
 .EXAMPLE
     PS C:\> .\Deploy-OSMaintenanceTask.ps1
@@ -19,10 +24,10 @@
 .NOTES
     Name:           Deploy-OSMaintenanceTask.ps1
     Author:         Zachary Schmalz
-    Version:        1.0.1
+    Version:        1.0.2
     Date:           2026-06-08
     Repository:     https://github.com/ZacharySchmalzEng/Tools
-    Changes:        Added disk corruption alert and integrated weekly auto-update task registration.
+    Changes:        Added OS detection and guarded auto-update registration for Windows 10; kept existing RunOnce alerts.
 #>
 
 # 1. Define the Maintenance Payload
@@ -96,6 +101,14 @@ $MaintenancePayload = {
 $Bytes = [System.Text.Encoding]::Unicode.GetBytes($MaintenancePayload.ToString())
 $EncodedCommand = [Convert]::ToBase64String($Bytes)
 
+# Detect OS version and determine whether to skip interactive tasks
+$OSInfo = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
+$OSVersion = if ($null -ne $OSInfo) { $OSInfo.Version } else { ([System.Environment]::OSVersion.Version).ToString() }
+$IsWindows10 = $OSVersion -like '10.*'
+$SkipInteractiveTasks = $IsWindows10
+
+Write-Host "[*] Detected OS version $OSVersion. Skip interactive tasks: $SkipInteractiveTasks" -ForegroundColor Cyan
+
 # 3. Define Scheduled Task Parameters
 $TaskName = "Automated-OS-Maintenance"
 $TaskDescription = "Performs conditional OS maintenance, image servicing, and telemetry injection."
@@ -124,21 +137,41 @@ Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action
 Write-Host "[+] Scheduled task '$TaskName' successfully registered and initialized." -ForegroundColor Green
 
 # 6. Register Weekly Auto-Update Task
-$AutoUpdatePayload = {
-    winget upgrade --all --silent --accept-source-agreements --accept-package-agreements
-    Install-Module PSWindowsUpdate -Force -AllowClobber -ErrorAction SilentlyContinue
-    Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
-    Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
+if ($SkipInteractiveTasks) {
+    Write-Host "[!] Skipping auto-update task registration due to interactive requirements on Windows 10." -ForegroundColor Yellow
 }
+else {
+    # Build a safe, non-interactive auto-update script based on available tooling
+    $AutoUpdateCommands = @()
 
-$AutoUpdateBytes = [System.Text.Encoding]::Unicode.GetBytes($AutoUpdatePayload.ToString())
-$AutoUpdateEncoded = [Convert]::ToBase64String($AutoUpdateBytes)
-$AutoUpdateTaskName = "Automated-OS-AutoUpdate"
-$AutoUpdateDescription = "Automated silent app updates via Winget and Windows Update via PSWindowsUpdate module."
-$AutoUpdateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $AutoUpdateEncoded"
-$AutoUpdateTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00AM
-$AutoUpdateTrigger.RandomDelay = [TimeSpan]::FromHours(2)
-$AutoUpdatePrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        $AutoUpdateCommands += 'winget upgrade --all --silent --accept-source-agreements --accept-package-agreements'
+    }
+    else {
+        Write-Host "[-] 'winget' not found; skipping winget upgrades." -ForegroundColor Yellow
+    }
 
-Register-ScheduledTask -TaskName $AutoUpdateTaskName -Description $AutoUpdateDescription -Action $AutoUpdateAction -Trigger $AutoUpdateTrigger -Principal $AutoUpdatePrincipal -Settings $Settings -Force | Out-Null
-Write-Host "[+] Scheduled task '$AutoUpdateTaskName' successfully registered and initialized." -ForegroundColor Green
+    # PSWindowsUpdate flow (best-effort; requires internet & rights)
+    $AutoUpdateCommands += 'Install-Module PSWindowsUpdate -Force -AllowClobber -ErrorAction SilentlyContinue'
+    $AutoUpdateCommands += 'Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue'
+    $AutoUpdateCommands += 'Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot -ErrorAction SilentlyContinue'
+
+    if ($AutoUpdateCommands.Count -eq 0) {
+        Write-Host "[-] No auto-update commands available; not registering auto-update task." -ForegroundColor Yellow
+    }
+    else {
+        $AutoUpdateScript = $AutoUpdateCommands -join "`n"
+
+        $AutoUpdateBytes = [System.Text.Encoding]::Unicode.GetBytes($AutoUpdateScript)
+        $AutoUpdateEncoded = [Convert]::ToBase64String($AutoUpdateBytes)
+        $AutoUpdateTaskName = "Automated-OS-AutoUpdate"
+        $AutoUpdateDescription = "Automated silent app updates via Winget and Windows Update via PSWindowsUpdate module."
+        $AutoUpdateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $AutoUpdateEncoded"
+        $AutoUpdateTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00AM
+        $AutoUpdateTrigger.RandomDelay = [TimeSpan]::FromHours(2)
+        $AutoUpdatePrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+
+        Register-ScheduledTask -TaskName $AutoUpdateTaskName -Description $AutoUpdateDescription -Action $AutoUpdateAction -Trigger $AutoUpdateTrigger -Principal $AutoUpdatePrincipal -Settings $Settings -Force | Out-Null
+        Write-Host "[+] Scheduled task '$AutoUpdateTaskName' successfully registered and initialized." -ForegroundColor Green
+    }
+}
