@@ -24,11 +24,38 @@
 .NOTES
     Name:           Deploy-OSMaintenanceTask.ps1
     Author:         Zachary Schmalz
-    Version:        1.0.2
+    Version:        1.0.3
     Date:           2026-06-08
     Repository:     https://github.com/ZacharySchmalzEng/Tools
     Changes:        Added OS detection and guarded auto-update registration for Windows 10; kept existing RunOnce alerts.
 #>
+
+# Ensure script is executed with elevation to perform system changes
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "[!] This script must be run as Administrator." -ForegroundColor Red
+    exit 1
+}
+
+# Ensure event source exists for centralized logging from this deployment script
+$GlobalEventSource = 'OS-Maintenance'
+if (-not [System.Diagnostics.EventLog]::SourceExists($GlobalEventSource)) {
+    try { New-EventLog -LogName Application -Source $GlobalEventSource } catch { Write-Host "[!] Could not create EventLog source: $_" -ForegroundColor Yellow }
+}
+
+function Ensure-CmdletExists {
+    param([string]$Name)
+    if (-not (Get-Command -Name $Name -ErrorAction SilentlyContinue)) {
+        Write-Host "[!] Cmdlet or command '$Name' not found; related features will be skipped." -ForegroundColor Yellow
+        try { Write-EventLog -LogName Application -Source $GlobalEventSource -EventId 6001 -EntryType Warning -Message "Cmdlet missing: $Name" } catch { }
+        return $false
+    }
+    return $true
+}
+
+if (-not [Environment]::Is64BitProcess) {
+    Write-Host "[!] Running in 32-bit PowerShell; scheduled tasks will be registered to call 64-bit PowerShell where possible." -ForegroundColor Yellow
+}
+
 
 # 1. Define the Maintenance Payload
 $MaintenancePayload = {
@@ -42,6 +69,38 @@ $MaintenancePayload = {
     Write-EventLog -LogName $EventLog -Source $EventSource -EventId 1000 -EntryType Information -Message "Initiating Monthly OS Maintenance Sequence."
 
     try {
+        # Optional dry-run toggle for destructive operations within payload
+        $DryRun = $false
+
+        function SafeRemove-OldItems {
+            param(
+                [string[]]$Paths,
+                [datetime]$Threshold
+            )
+
+            foreach ($p in $Paths) {
+                try {
+                    $items = Get-ChildItem -Path $p -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt $Threshold }
+                    if ($items) {
+                        foreach ($it in $items) {
+                            # Log planned removal
+                            Write-EventLog -LogName $EventLog -Source $EventSource -EventId 4100 -EntryType Information -Message "Removing: $($it.FullName)"
+                            if (-not $DryRun) {
+                                try {
+                                    Remove-Item -LiteralPath $it.FullName -Recurse -Force -ErrorAction Stop
+                                }
+                                catch {
+                                    Write-EventLog -LogName $EventLog -Source $EventSource -EventId 4101 -EntryType Warning -Message "Failed to remove $($it.FullName): $_"
+                                }
+                            }
+                        }
+                    }
+                }
+                catch {
+                    Write-EventLog -LogName $EventLog -Source $EventSource -EventId 4102 -EntryType Warning -Message "Error enumerating $p: $_"
+                }
+            }
+        }
         # Phase 1: Storage & Network Hygiene
         Write-EventLog -LogName $EventLog -Source $EventSource -EventId 1001 -EntryType Information -Message "Executing NVMe/SSD TRIM and DNS Cache Flush."
         Optimize-Volume -DriveLetter C -ReTrim -ErrorAction SilentlyContinue
@@ -82,13 +141,15 @@ $MaintenancePayload = {
         # Phase 5: Stale Temporary Data Purge (> 14 Days Old)
         $TempPaths = @("$env:WINDIR\Temp\*", "$env:LOCALAPPDATA\Temp\*")
         $Threshold = (Get-Date).AddDays(-14)
-        foreach ($Path in $TempPaths) {
-            Get-ChildItem -Path $Path -Recurse -Force -ErrorAction SilentlyContinue | 
-                Where-Object { $_.LastWriteTime -lt $Threshold } | 
-                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        SafeRemove-OldItems -Paths $TempPaths -Threshold $Threshold
 
-        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+        try {
+            if (-not $DryRun) { Clear-RecycleBin -Force -ErrorAction SilentlyContinue }
+            else { Write-EventLog -LogName $EventLog -Source $EventSource -EventId 4103 -EntryType Information -Message "DryRun: Clear-RecycleBin skipped." }
+        }
+        catch {
+            Write-EventLog -LogName $EventLog -Source $EventSource -EventId 4104 -EntryType Warning -Message "Clear-RecycleBin failed: $_"
+        }
 
         Write-EventLog -LogName $EventLog -Source $EventSource -EventId 1004 -EntryType Information -Message "Monthly OS Maintenance Sequence completed successfully."
     }
@@ -97,9 +158,22 @@ $MaintenancePayload = {
     }
 }
 
-# 2. Encode the Payload to Base64
-$Bytes = [System.Text.Encoding]::Unicode.GetBytes($MaintenancePayload.ToString())
-$EncodedCommand = [Convert]::ToBase64String($Bytes)
+$ProgramDataPath = Join-Path $env:ProgramData 'OSMaintenance'
+New-Item -Path $ProgramDataPath -ItemType Directory -Force | Out-Null
+
+# Persist maintenance payload to disk (avoid EncodedCommand and ExecutionPolicy Bypass)
+$PayloadPath = Join-Path $ProgramDataPath 'OSMaintenancePayload.ps1'
+try {
+    $MaintenancePayload.ToString() | Out-File -FilePath $PayloadPath -Encoding Unicode -Force
+}
+catch {
+    Write-Host "[!] Failed to write payload to $PayloadPath: $_" -ForegroundColor Red
+    throw
+}
+
+# Prefer the 64-bit PowerShell executable from System32 when registering tasks
+$PSExe = Join-Path $env:windir 'System32\WindowsPowerShell\v1.0\powershell.exe'
+if (-not (Test-Path $PSExe)) { $PSExe = 'powershell.exe' }
 
 # Detect OS version and determine whether to skip interactive tasks
 $OSInfo = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
@@ -112,7 +186,7 @@ Write-Host "[*] Detected OS version $OSVersion. Skip interactive tasks: $SkipInt
 # 3. Define Scheduled Task Parameters
 $TaskName = "Automated-OS-Maintenance"
 $TaskDescription = "Performs conditional OS maintenance, image servicing, and telemetry injection."
-$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand"
+$Action = New-ScheduledTaskAction -Execute $PSExe -Argument "-NoProfile -WindowStyle Hidden -File `"$PayloadPath`""
 
 $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -WeeksInterval 4 -At 2:00AM
 $Trigger.RandomDelay = [TimeSpan]::FromHours(2)
@@ -162,11 +236,38 @@ else {
     else {
         $AutoUpdateScript = $AutoUpdateCommands -join "`n"
 
-        $AutoUpdateBytes = [System.Text.Encoding]::Unicode.GetBytes($AutoUpdateScript)
-        $AutoUpdateEncoded = [Convert]::ToBase64String($AutoUpdateBytes)
+        # Build a safe auto-update script on disk (includes TLS and safe module install checks)
+        $AutoUpdatePath = Join-Path $ProgramDataPath 'AutoUpdatePayload.ps1'
+        $AutoUpdateHeader = @"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+function Install-Module-Safe {
+    param([string]$Name)
+    try {
+        if (Test-Connection -ComputerName 'www.powershellgallery.com' -Count 1 -Quiet) {
+            Install-Module -Name $Name -Force -AllowClobber -ErrorAction Stop
+        }
+        else {
+            Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 5001 -EntryType Warning -Message "PSGallery unreachable; skipping Install-Module $Name."
+        }
+    }
+    catch {
+        Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 5002 -EntryType Error -Message "Install-Module $Name failed: $_"
+    }
+}
+"@
+
+        $AutoUpdateFull = $AutoUpdateHeader + "`n" + $AutoUpdateScript
+        try {
+            $AutoUpdateFull | Out-File -FilePath $AutoUpdatePath -Encoding Unicode -Force
+        }
+        catch {
+            Write-Host "[!] Failed to write auto-update script to $AutoUpdatePath: $_" -ForegroundColor Red
+            throw
+        }
+
         $AutoUpdateTaskName = "Automated-OS-AutoUpdate"
         $AutoUpdateDescription = "Automated silent app updates via Winget and Windows Update via PSWindowsUpdate module."
-        $AutoUpdateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $AutoUpdateEncoded"
+        $AutoUpdateAction = New-ScheduledTaskAction -Execute $PSExe -Argument "-NoProfile -WindowStyle Hidden -File `"$AutoUpdatePath`""
         $AutoUpdateTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00AM
         $AutoUpdateTrigger.RandomDelay = [TimeSpan]::FromHours(2)
         $AutoUpdatePrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest

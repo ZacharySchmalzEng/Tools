@@ -5,9 +5,9 @@
     Zachary Schmalz
 .NOTES
     Name: Windows-Deployment-Tool.ps1
-    Version: 6.10.1
-    Date: 2026-04-06
-    Changes: Added -Light profile, Base64 -Maintenance Scheduled Task, and global -Uninstall flag with native .exe/.msi support.
+    Version: 6.10.2
+    Date: 2026-06-08
+    Changes: Updated maintenance and auto-update scheduled tasks to use file-based payloads instead of Base64 EncodedCommand; removed internal ExecutionPolicy Bypass requirements and improved safe cleanup handling.
 #>
 
 param (
@@ -139,7 +139,7 @@ if ($Help) {
     Write-Host " WINDOWS DEPLOYMENT TOOL HELP MENU" -ForegroundColor Cyan
     Write-Host "================================================================" -ForegroundColor Cyan
     Write-Host "Usage: .\Windows-Deployment-Tool.ps1 [OPTIONS]"
-    Write-Host "NOTE: Must be executed with: powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1`n" -ForegroundColor Yellow
+    Write-Host "NOTE: This script should be executed from an Administrator PowerShell session. If local script execution is restricted, use an appropriate execution policy or signed script." -ForegroundColor Yellow
     Write-Host "PROFILES:"
     Write-Host " -Standard      Baselines (System, Debloat, Security, Apps, AutoUpdate, Maintenance)"
     Write-Host " -Complete      Full Suite (All modules including Gaming, Dev, Cyber, etc.)"
@@ -192,6 +192,9 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Write-Host "Running with Administrator privileges." -ForegroundColor Green
 Set-Location -Path $ScriptDir
+
+$PSExe = Join-Path $env:windir 'System32\WindowsPowerShell\v1.0\powershell.exe'
+if (-not (Test-Path $PSExe)) { $PSExe = 'powershell.exe' }
 
 $IsWin11 = Test-IsWin11
 if ($IsWin11) { Write-Host "Windows 11 Detected. Enabling Win11-specific configurations." -ForegroundColor Cyan }
@@ -433,7 +436,7 @@ wsl --mount `$DrivePath --partition `$PartitionNum --type `$FileSystem
                 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
             }
 
-            $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$MountScriptPath`""
+            $Action = New-ScheduledTaskAction -Execute $PSExe -Argument "-NoProfile -WindowStyle Hidden -File `"$MountScriptPath`""
             $Trigger = New-ScheduledTaskTrigger -AtLogOn
             $Principal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Administrators" -RunLevel Highest
             $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable 
@@ -595,29 +598,48 @@ if ($Maintenance) {
     } else {
         Write-Host "`n[+] STARTING MAINTENANCE JOB MODULE..." -ForegroundColor Magenta
         
-        $MaintenanceScript = {
-            # PowerShell lacks a native Monthly trigger. 
-            # This task triggers every Sunday, but aborts if it is not the FIRST Sunday of the month (Days 1-7).
-            if ((Get-Date).Day -gt 7) { exit }
+        $MaintenancePayloadPath = Join-Path $ScriptDir 'WindowsDeploymentTool_MaintenancePayload.ps1'
+        $MaintenanceContent = @'
+# PowerShell lacks a native Monthly trigger.
+# This task triggers every Sunday, but aborts if it is not the FIRST Sunday of the month (Days 1-7).
+if ((Get-Date).Day -gt 7) { exit }
 
-            sfc /scannow
-            DISM /Online /Cleanup-Image /StartComponentCleanup
-            DISM /Online /Cleanup-Image /RestoreHealth
-            chkdsk C: /scan
-            Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "$env:WINDIR\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        
-        $EncodedScript = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($MaintenanceScript.ToString()))
+if (-not [System.Diagnostics.EventLog]::SourceExists('OS-Maintenance')) {
+    New-EventLog -LogName Application -Source 'OS-Maintenance'
+}
+
+function SafeRemove-OldItems {
+    param([string[]]$Paths, [datetime]$Threshold)
+    foreach ($Path in $Paths) {
+        try {
+            $items = Get-ChildItem -Path $Path -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt $Threshold }
+            foreach ($item in $items) {
+                Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 7001 -EntryType Information -Message "Removing: $($item.FullName)"
+                try { Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop } catch { Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 7002 -EntryType Warning -Message "Failed to remove $($item.FullName): $_" }
+            }
+        } catch { Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 7003 -EntryType Warning -Message "Error enumerating $Path: $_" }
+    }
+}
+
+sfc /scannow
+DISM /Online /Cleanup-Image /StartComponentCleanup
+DISM /Online /Cleanup-Image /RestoreHealth
+chkdsk C: /scan
+$CleanupPaths = @("$env:TEMP\*", "$env:WINDIR\Temp\*")
+$Threshold = (Get-Date).AddDays(-14)
+SafeRemove-OldItems -Paths $CleanupPaths -Threshold $Threshold
+'@
+        $MaintenanceContent | Out-File -FilePath $MaintenancePayloadPath -Encoding Unicode -Force
+
         $TaskName = "WindowsDeploymentTool_MonthlyMaintenance"
         $TaskDescription = "Performs automated monthly system repairs, SFC, DISM cleanups, online NTFS disk checks, and temp file removal."
-        
-        $Action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedScript"
-        
-        # Set to run Weekly. The logic inside the $EncodedScript handles the "Monthly" filtering.
+
+        $Action = New-ScheduledTaskAction -Execute $PSExe -Argument "-NoProfile -WindowStyle Hidden -File `"$MaintenancePayloadPath`""
+
+        # Set to run Weekly. The payload handles the "Monthly" filtering.
         $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 2:00AM
         $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-        
+
         Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Description $TaskDescription -Force | Out-Null
         Write-Host "Monthly maintenance task '$TaskName' registered successfully." -ForegroundColor Green
     }
@@ -636,17 +658,45 @@ if ($AutoUpdate) {
     } else {
         Write-Host "`n[+] STARTING AUTO-UPDATER MODULE..." -ForegroundColor Magenta
         try {
-            $UpdateScript = {
-                winget upgrade --all --silent --accept-source-agreements --accept-package-agreements
-                Install-Module PSWindowsUpdate -Force -AllowClobber -ErrorAction SilentlyContinue
-                Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
-                Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
-            }
-            
-            $EncodedUpdate = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($UpdateScript.ToString()))
+            $AutoUpdatePayloadPath = Join-Path $ScriptDir 'WindowsDeploymentTool_AutoUpdatePayload.ps1'
+            $AutoUpdateContent = @'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+if (-not [System.Diagnostics.EventLog]::SourceExists('OS-Maintenance')) {
+    New-EventLog -LogName Application -Source 'OS-Maintenance'
+}
+
+function Install-Module-Safe {
+    param([string]$Name)
+    try {
+        if (Test-Connection -ComputerName 'www.powershellgallery.com' -Count 1 -Quiet) {
+            Install-Module -Name $Name -Force -AllowClobber -ErrorAction Stop
+        } else {
+            Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 5001 -EntryType Warning -Message "PSGallery unreachable; skipping Install-Module $Name."
+        }
+    } catch {
+        Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 5002 -EntryType Error -Message "Install-Module $Name failed: $_"
+    }
+}
+
+if (Get-Command winget -ErrorAction SilentlyContinue) {
+    winget upgrade --all --silent --accept-source-agreements --accept-package-agreements
+} else {
+    Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 5003 -EntryType Warning -Message "winget not available; skipping winget upgrades."
+}
+
+Install-Module-Safe -Name PSWindowsUpdate
+Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
+if (Get-Command Install-WindowsUpdate -ErrorAction SilentlyContinue) {
+    Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot -ErrorAction SilentlyContinue
+} else {
+    Write-EventLog -LogName Application -Source 'OS-Maintenance' -EventId 5004 -EntryType Warning -Message "Install-WindowsUpdate not available after PSWindowsUpdate install."
+}
+'@
+            $AutoUpdateContent | Out-File -FilePath $AutoUpdatePayloadPath -Encoding Unicode -Force
             $TaskDescription = "Automated silent app updates via Winget and Windows Update via PSWindowsUpdate module."
             
-            $Action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedUpdate"
+            $Action = New-ScheduledTaskAction -Execute $PSExe -Argument "-NoProfile -WindowStyle Hidden -File `"$AutoUpdatePayloadPath`""
             $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00AM
             $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
             

@@ -21,13 +21,13 @@ Rather than a "one-size-fits-all" approach, this script uses command-line flags 
 * **Internet**: Active connection required for Winget and dynamic downloads.
 
 ### Quick Start
-To view the help menu and see all available options, run the script with the Execution Policy bypass:
+To view the help menu and see all available options, run the script from an elevated Administrator PowerShell session:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1             # Displays the help menu
-powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -Standard   # Universal Baseline
-powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -Complete   # Heavy Workstation
-powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -System     # Run a single module
+powershell.exe -File .\Windows-Deployment-Tool.ps1             # Displays the help menu
+powershell.exe -File .\Windows-Deployment-Tool.ps1 -Standard   # Universal Baseline
+powershell.exe -File .\Windows-Deployment-Tool.ps1 -Complete   # Heavy Workstation
+powershell.exe -File .\Windows-Deployment-Tool.ps1 -System     # Run a single module
 ```
 
 ## ⚙️ Command-Line Flags
@@ -64,7 +64,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -Syst
 
 ## 📝 Important Notes
 
-* **Execution Policy**: You **must** invoke the script using `powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1`. The script no longer attempts to bypass the policy internally, as strictly restricted systems will block the file from loading before the internal bypass function can even execute.
+* **Execution Policy**: The script should be run from an elevated Administrator PowerShell session. Avoid using `-ExecutionPolicy Bypass` unless your environment strictly requires it; prefer signing the script or using a less permissive policy when possible.
 * **Idempotent & Fast**: The script is designed to be completely idempotent. It takes a lightning-fast memory snapshot of your installed Winget packages and reads current registry values before making changes. You can safely run this script repeatedly without wasting time, duplicating installs, or overwriting identical configurations.
 * **Log Rotation**: All actions are thoroughly logged to an `InstallerLogs` directory created in the same folder as the script. The script retains the 10 most recent logs and automatically purges older ones.
 * **Server OS Compatibility**: The script detects if it is running on a Windows Server kernel and will dynamically adjust package selections (like using WinDirStat) to prevent licensing or installer failures.

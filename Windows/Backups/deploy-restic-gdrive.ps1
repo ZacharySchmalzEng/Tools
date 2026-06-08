@@ -5,6 +5,12 @@
     Automates the installation, configuration, and scheduling of an encrypted, deduplicated 
     backup pipeline. Integrates VSS (--use-fs-snapshot), intelligent retention, disaster 
     recovery, and Task Scheduler randomization to prevent API collisions.
+
+# .NOTES
+#    Name: deploy-restic-gdrive.ps1
+#    Version: 1.0.1
+#    Date: 2026-06-08
+#    Changes: Updated scheduled task registration to use system PowerShell with -File instead of ExecutionPolicy Bypass.
 #>
 [CmdletBinding()]
 param()
@@ -152,8 +158,11 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 $Trigger = New-ScheduledTaskTrigger -Daily -At "3:00 AM"
 $Trigger.RandomDelay = New-TimeSpan -Hours 2
 
-# Execute silently bypassing execution policies
-$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$WorkerScriptPath`""
+$PSExe = Join-Path $env:windir 'System32\WindowsPowerShell\v1.0\powershell.exe'
+if (-not (Test-Path $PSExe)) { $PSExe = 'powershell.exe' }
+
+# Execute silently via the system PowerShell executable
+$Action = New-ScheduledTaskAction -Execute $PSExe -Argument "-NoProfile -WindowStyle Hidden -File `"$WorkerScriptPath`""
 
 # MUST run as SYSTEM/Highest to hook into VSS for file locks
 $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
