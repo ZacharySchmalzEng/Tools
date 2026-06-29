@@ -263,6 +263,19 @@ if ($System) {
             Set-RegTweak -Path $ExplorerKey -Name "Hidden" -Value 1
             Set-RegTweak -Path $ExplorerKey -Name "HideFileExt" -Value 0
 
+            # ------------------------------------------------------------------
+            # SCHEDULED TASK HISTORY ENABLEMENT
+            # ------------------------------------------------------------------
+            Write-Host "--- Checking Task Scheduler ETW Logging... ---" -ForegroundColor Yellow
+            $TaskEtwStatus = wevtutil gl Microsoft-Windows-TaskScheduler/Operational | Select-String "enabled: true"
+            if (-not $TaskEtwStatus) {
+                wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true
+                Write-Host "Applied tweak: Scheduled Task History Enabled" -ForegroundColor Green
+            } else { 
+                Write-Host "Already applied: Scheduled Task History" -ForegroundColor DarkGray 
+            }
+            # ------------------------------------------------------------------
+
             if ($IsWin11) {
                 Write-Host "--- Checking Windows 11-specific UI tweaks... ---" -ForegroundColor Yellow
                 $ContextMenuKey = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
@@ -296,7 +309,7 @@ if ($System) {
                 $message = "Would you like to activate the Ultimate Performance power plan now? (Select No to maintain your current energy-efficient settings)."
                 $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Activates Ultimate Performance."
                 $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Leaves current plan active."
-                $choices = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no) 
+                $choices = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)  
                 $decision = $Host.UI.PromptForChoice($title, $message, $choices, 1)  
 
                 if ($decision -eq 0) {
@@ -585,41 +598,42 @@ if ($RunSoftware) {
 }
 
 # ==============================================================================
-# MODULE: MAINTENANCE JOB
+# MODULE: MAINTENANCE JOB (ORCHESTRATOR WRAPPER)
 # ==============================================================================
 if ($Maintenance) {
+    # TaskName defined in the decoupled script: Deploy-OSMaintenanceTask.ps1
+    $TaskName = "Automated-OS-Maintenance" 
+    
     if ($Uninstall) {
         Write-Host "`n[-] REMOVING MAINTENANCE JOB MODULE..." -ForegroundColor DarkYellow
-        Unregister-ScheduledTask -TaskName "WindowsDeploymentTool_MonthlyMaintenance" -Confirm:$false -ErrorAction SilentlyContinue
-        Write-Host "Monthly maintenance task removed." -ForegroundColor Green
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+        Remove-EventLog -LogName "Application" -Source "OS-Maintenance" -ErrorAction SilentlyContinue
+        Write-Host "Monthly maintenance task and Event Source removed." -ForegroundColor Green
     } else {
-        Write-Host "`n[+] STARTING MAINTENANCE JOB MODULE..." -ForegroundColor Magenta
+        Write-Host "`n[+] STARTING MAINTENANCE JOB MODULE (DECOUPLED WRAPPER)..." -ForegroundColor Magenta
         
-        $MaintenanceScript = {
-            # PowerShell lacks a native Monthly trigger. 
-            # This task triggers every Sunday, but aborts if it is not the FIRST Sunday of the month (Days 1-7).
-            if ((Get-Date).Day -gt 7) { exit }
-
-            sfc /scannow
-            DISM /Online /Cleanup-Image /StartComponentCleanup
-            DISM /Online /Cleanup-Image /RestoreHealth
-            chkdsk C: /scan
-            Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "$env:WINDIR\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+        $RepoURI = "https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Windows/Provisioning/Deploy-OSMaintenanceTask.ps1"
+        $LocalPath = Join-Path -Path $ScriptDir -ChildPath "Deploy-OSMaintenanceTask.ps1"
+        
+        try {
+            if (Test-Path $LocalPath) {
+                Write-Host "--- Local module detected. Sourcing execution to $LocalPath ---" -ForegroundColor Yellow
+                & $LocalPath
+                if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { Write-Warning "Decoupled script returned a non-zero exit code." }
+            } else {
+                Write-Host "--- Local module not found. Fetching fileless payload from Upstream Repository... ---" -ForegroundColor Yellow
+                
+                # Fetch script content into memory and cast to a runtime ScriptBlock
+                $RemotePayload = Invoke-RestMethod -Uri $RepoURI -UseBasicParsing -ErrorAction Stop
+                $ScriptBlock = [ScriptBlock]::Create($RemotePayload)
+                
+                Write-Host "--- Executing Upstream Payload ---" -ForegroundColor Yellow
+                & $ScriptBlock
+            }
+            Write-Host "Maintenance deployment wrapper execution completed." -ForegroundColor Green
+        } catch {
+            Write-Error "Failed to invoke decoupled OS Maintenance deployment script. Error: $_"
         }
-        
-        $EncodedScript = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($MaintenanceScript.ToString()))
-        $TaskName = "WindowsDeploymentTool_MonthlyMaintenance"
-        $TaskDescription = "Performs automated monthly system repairs, SFC, DISM cleanups, online NTFS disk checks, and temp file removal."
-        
-        $Action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedScript"
-        
-        # Set to run Weekly. The logic inside the $EncodedScript handles the "Monthly" filtering.
-        $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 2:00AM
-        $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-        
-        Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Description $TaskDescription -Force | Out-Null
-        Write-Host "Monthly maintenance task '$TaskName' registered successfully." -ForegroundColor Green
     }
 }
 

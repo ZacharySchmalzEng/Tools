@@ -1,6 +1,10 @@
 <#
 .SYNOPSIS
     Deploys an idempotent, Base64-encoded Windows OS maintenance scheduled task.
+.AUTHOR
+    Zachary Schmalz
+.NOTES
+    Source: https://github.com/ZacharySchmalzEng/Tools
 #>
 
 # 1. Define the Maintenance Payload
@@ -82,11 +86,12 @@ Write-Host "[*] Detected OS: $OSCaption. Skip interactive tasks: $IsWindows10" -
 
 # 4. Define Scheduled Task Parameters
 $TaskName = "Automated-OS-Maintenance"
-$TaskDescription = "Performs conditional OS maintenance, image servicing, and telemetry injection."
+$TaskSignature = "Deployed via automated provisioning. Maintained by Zachary Schmalz (ZacharySchmalzEng)."
+$TaskDescription = "Performs conditional OS maintenance, image servicing, and telemetry injection. | $TaskSignature"
 $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand"
 
 $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -WeeksInterval 4 -At 2:00AM
-$Trigger.RandomDelay = "PT2H" # FIXED: Strict ISO 8601 compliance required for XML parsing
+$Trigger.RandomDelay = "PT2H" # Strict ISO 8601 compliance required for XML parsing
 
 $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
@@ -119,7 +124,7 @@ else {
         Write-Host "[-] 'winget' not found; skipping winget upgrades." -ForegroundColor Yellow
     }
 
-    # FIXED: Bootstrap NuGet Provider to prevent Session 0 execution hang
+    # Bootstrap NuGet Provider to prevent Session 0 execution hang
     $AutoUpdateCommands += 'Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -ErrorAction SilentlyContinue'
     $AutoUpdateCommands += 'Install-Module PSWindowsUpdate -Force -AcceptLicense -AllowClobber -ErrorAction SilentlyContinue'
     $AutoUpdateCommands += 'Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue'
@@ -134,11 +139,11 @@ else {
         $AutoUpdateEncoded = [Convert]::ToBase64String($AutoUpdateBytes)
         
         $AutoUpdateTaskName = "Automated-OS-AutoUpdate"
-        $AutoUpdateDescription = "Automated silent app updates via Winget and Windows Update via PSWindowsUpdate module."
+        $AutoUpdateDescription = "Automated silent app updates via Winget and Windows Update via PSWindowsUpdate module. | $TaskSignature"
         $AutoUpdateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $AutoUpdateEncoded"
         
         $AutoUpdateTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00AM
-        $AutoUpdateTrigger.RandomDelay = "PT2H" # FIXED: Strict ISO 8601 compliance
+        $AutoUpdateTrigger.RandomDelay = "PT2H" 
         
         $AutoUpdatePrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
