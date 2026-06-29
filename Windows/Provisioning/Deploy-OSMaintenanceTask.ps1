@@ -1,33 +1,6 @@
-#
+<#
 .SYNOPSIS
     Deploys an idempotent, Base64-encoded Windows OS maintenance scheduled task.
-
-.DESCRIPTION
-    Registers a monthly scheduled task executing in the SYSTEM context. The payload performs:
-    1. Storage optimization (TRIM) and DNS cache flushing.
-    2. Proactive WinSxS component store cleanup.
-    3. Online NTFS health auditing and disk corruption detection.
-    4. Conditional DISM/SFC system file repair.
-    5. Aggressive purging of temporary data older than 14 days.
-    6. Native Application Event Log telemetry injection (Source: OS-Maintenance).
-    7. Best-effort weekly automated Winget and Windows Update auto-update task registration.
-
-    The script now detects the host OS version and will disable registration of
-    auto-update tasks that require an interactive user context on Windows 10.
-    Pop-up/RunOnce alerts remain present but are not relied upon for SYSTEM
-    scheduled executions.
-
-.EXAMPLE
-    PS C:\> .\Deploy-OSMaintenanceTask.ps1
-    Executes the deployment, automatically tearing down any existing task registration before initializing the new payload.
-
-.NOTES
-    Name:           Deploy-OSMaintenanceTask.ps1
-    Author:         Zachary Schmalz
-    Version:        1.0.2
-    Date:           2026-06-08
-    Repository:     https://github.com/ZacharySchmalzEng/Tools
-    Changes:        Added OS detection and guarded auto-update registration for Windows 10; kept existing RunOnce alerts.
 #>
 
 # 1. Define the Maintenance Payload
@@ -54,7 +27,7 @@ $MaintenancePayload = {
         $ChkdskProcess = Start-Process -FilePath "chkdsk.exe" -ArgumentList "C: /scan /perf" -Wait -NoNewWindow -PassThru
         if ($ChkdskProcess.ExitCode -ne 0) {
             Write-EventLog -LogName $EventLog -Source $EventSource -EventId 2500 -EntryType Warning -Message "CHKDSK detected potential disk corruption. Please review the Application Event Log for OS-Maintenance."
-            $DiskAlertCmd = "powershell.exe -WindowStyle Hidden -Command \"Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Automated Maintenance detected potential disk corruption. Please review the Application Event Log for OS-Maintenance.', 'System Health Alert', 'OK', 'Error')\""
+            $DiskAlertCmd = "powershell.exe -WindowStyle Hidden -Command `"Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Automated Maintenance detected potential disk corruption. Please review the Application Event Log for OS-Maintenance.', 'System Health Alert', 'OK', 'Error')`""
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" -Name "DiskCorruptionAlert" -Value $DiskAlertCmd
         }
 
@@ -69,7 +42,6 @@ $MaintenancePayload = {
             
             if ($SfcVerify.ExitCode -ne 0) {
                 Write-EventLog -LogName $EventLog -Source $EventSource -EventId 3000 -EntryType Error -Message "CRITICAL: DISM/SFC failed to repair system corruption."
-                
                 $AlertCmd = "powershell.exe -WindowStyle Hidden -Command `"Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Automated Maintenance detected unrepaired OS corruption. Please review the Application Event Log for OS-Maintenance.', 'System Health Alert', 'OK', 'Error')`""
                 Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" -Name "OSCorruptionAlert" -Value $AlertCmd
             } else {
@@ -101,26 +73,25 @@ $MaintenancePayload = {
 $Bytes = [System.Text.Encoding]::Unicode.GetBytes($MaintenancePayload.ToString())
 $EncodedCommand = [Convert]::ToBase64String($Bytes)
 
-# Detect OS version and determine whether to skip interactive tasks
+# 3. Detect OS version correctly (Bypass NT 10.0 kernel overlap for Win 11)
 $OSInfo = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
-$OSVersion = if ($null -ne $OSInfo) { $OSInfo.Version } else { ([System.Environment]::OSVersion.Version).ToString() }
-$IsWindows10 = $OSVersion -like '10.*'
-$SkipInteractiveTasks = $IsWindows10
+$OSCaption = if ($null -ne $OSInfo) { $OSInfo.Caption } else { "Unknown" }
+$IsWindows10 = $OSCaption -match "Windows 10"
 
-Write-Host "[*] Detected OS version $OSVersion. Skip interactive tasks: $SkipInteractiveTasks" -ForegroundColor Cyan
+Write-Host "[*] Detected OS: $OSCaption. Skip interactive tasks: $IsWindows10" -ForegroundColor Cyan
 
-# 3. Define Scheduled Task Parameters
+# 4. Define Scheduled Task Parameters
 $TaskName = "Automated-OS-Maintenance"
 $TaskDescription = "Performs conditional OS maintenance, image servicing, and telemetry injection."
 $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand"
 
 $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -WeeksInterval 4 -At 2:00AM
-$Trigger.RandomDelay = [TimeSpan]::FromHours(2)
+$Trigger.RandomDelay = "PT2H" # FIXED: Strict ISO 8601 compliance required for XML parsing
 
 $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
 
-# 4. Idempotent State Teardown
+# 5. Idempotent State Teardown
 $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($null -ne $ExistingTask) {
     Write-Host "[-] Existing task detected. Executing teardown sequence..." -ForegroundColor Yellow
@@ -131,28 +102,26 @@ if ($null -ne $ExistingTask) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-# 5. Register the Scheduled Task
-Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
-
+# 6. Register the Maintenance Task
+Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force -ErrorAction Stop | Out-Null
 Write-Host "[+] Scheduled task '$TaskName' successfully registered and initialized." -ForegroundColor Green
 
-# 6. Register Weekly Auto-Update Task
-if ($SkipInteractiveTasks) {
-    Write-Host "[!] Skipping auto-update task registration due to interactive requirements on Windows 10." -ForegroundColor Yellow
+# 7. Register Weekly Auto-Update Task
+if ($IsWindows10) {
+    Write-Host "[!] Skipping auto-update task registration due to interactive UI bounds on Windows 10." -ForegroundColor Yellow
 }
 else {
-    # Build a safe, non-interactive auto-update script based on available tooling
     $AutoUpdateCommands = @()
 
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         $AutoUpdateCommands += 'winget upgrade --all --silent --accept-source-agreements --accept-package-agreements'
-    }
-    else {
+    } else {
         Write-Host "[-] 'winget' not found; skipping winget upgrades." -ForegroundColor Yellow
     }
 
-    # PSWindowsUpdate flow (best-effort; requires internet & rights)
-    $AutoUpdateCommands += 'Install-Module PSWindowsUpdate -Force -AllowClobber -ErrorAction SilentlyContinue'
+    # FIXED: Bootstrap NuGet Provider to prevent Session 0 execution hang
+    $AutoUpdateCommands += 'Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers -ErrorAction SilentlyContinue'
+    $AutoUpdateCommands += 'Install-Module PSWindowsUpdate -Force -AcceptLicense -AllowClobber -ErrorAction SilentlyContinue'
     $AutoUpdateCommands += 'Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue'
     $AutoUpdateCommands += 'Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot -ErrorAction SilentlyContinue'
 
@@ -161,17 +130,19 @@ else {
     }
     else {
         $AutoUpdateScript = $AutoUpdateCommands -join "`n"
-
         $AutoUpdateBytes = [System.Text.Encoding]::Unicode.GetBytes($AutoUpdateScript)
         $AutoUpdateEncoded = [Convert]::ToBase64String($AutoUpdateBytes)
+        
         $AutoUpdateTaskName = "Automated-OS-AutoUpdate"
         $AutoUpdateDescription = "Automated silent app updates via Winget and Windows Update via PSWindowsUpdate module."
         $AutoUpdateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $AutoUpdateEncoded"
+        
         $AutoUpdateTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00AM
-        $AutoUpdateTrigger.RandomDelay = [TimeSpan]::FromHours(2)
+        $AutoUpdateTrigger.RandomDelay = "PT2H" # FIXED: Strict ISO 8601 compliance
+        
         $AutoUpdatePrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
-        Register-ScheduledTask -TaskName $AutoUpdateTaskName -Description $AutoUpdateDescription -Action $AutoUpdateAction -Trigger $AutoUpdateTrigger -Principal $AutoUpdatePrincipal -Settings $Settings -Force | Out-Null
+        Register-ScheduledTask -TaskName $AutoUpdateTaskName -Description $AutoUpdateDescription -Action $AutoUpdateAction -Trigger $AutoUpdateTrigger -Principal $AutoUpdatePrincipal -Settings $Settings -Force -ErrorAction Stop | Out-Null
         Write-Host "[+] Scheduled task '$AutoUpdateTaskName' successfully registered and initialized." -ForegroundColor Green
     }
 }
