@@ -638,35 +638,39 @@ if ($Maintenance) {
 }
 
 # ==============================================================================
-# MODULE: AUTO-UPDATER
+# MODULE: AUTO-UPDATER (ORCHESTRATOR WRAPPER)
 # ==============================================================================
 if ($AutoUpdate) {
-    $TaskName = "WindowsDeploymentTool_AutoUpdate"
+    $TaskName = "Automated-OS-AutoUpdate" 
     
     if ($Uninstall) {
-        Write-Host "`n[-] REMOVING AUTO-UPDATE JOB..." -ForegroundColor DarkYellow
+        Write-Host "`n[-] REMOVING AUTO-UPDATE JOB MODULE..." -ForegroundColor DarkYellow
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-        Write-Host "Auto-Update task removed." -ForegroundColor Green
+        Remove-EventLog -LogName "Application" -Source "OS-AutoUpdater" -ErrorAction SilentlyContinue
+        Write-Host "Auto-Update task and Event Source removed." -ForegroundColor Green
     } else {
-        Write-Host "`n[+] STARTING AUTO-UPDATER MODULE..." -ForegroundColor Magenta
+        Write-Host "`n[+] STARTING AUTO-UPDATE JOB MODULE (DECOUPLED WRAPPER)..." -ForegroundColor Magenta
+        
+        $RepoURI = "https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Windows/Provisioning/Deploy-AutoUpdateTask.ps1"
+        $LocalPath = Join-Path -Path $ScriptDir -ChildPath "Deploy-AutoUpdateTask.ps1"
+        
         try {
-            $UpdateScript = {
-                winget upgrade --all --silent --accept-source-agreements --accept-package-agreements
-                Install-Module PSWindowsUpdate -Force -AllowClobber -ErrorAction SilentlyContinue
-                Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
-                Install-WindowsUpdate -MicrosoftUpdate -AcceptAll -AutoReboot
+            if (Test-Path $LocalPath) {
+                Write-Host "--- Local module detected. Sourcing execution to $LocalPath ---" -ForegroundColor Yellow
+                & $LocalPath
+                if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { Write-Warning "Decoupled script returned a non-zero exit code." }
+            } else {
+                Write-Host "--- Local module not found. Fetching fileless payload from Upstream Repository... ---" -ForegroundColor Yellow
+                $RemotePayload = Invoke-RestMethod -Uri $RepoURI -UseBasicParsing -ErrorAction Stop
+                $ScriptBlock = [ScriptBlock]::Create($RemotePayload)
+                
+                Write-Host "--- Executing Upstream Payload ---" -ForegroundColor Yellow
+                & $ScriptBlock
             }
-            
-            $EncodedUpdate = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($UpdateScript.ToString()))
-            $TaskDescription = "Automated silent app updates via Winget and Windows Update via PSWindowsUpdate module."
-            
-            $Action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedUpdate"
-            $Trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3:00AM
-            $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-            
-            Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Description $TaskDescription -Force | Out-Null
-            Write-Host "Weekly auto-update task '$TaskName' registered successfully." -ForegroundColor Green
-        } catch { Write-Warning "Failed to configure Auto-Update task. Error: $_" }
+            Write-Host "Auto-Update deployment wrapper execution completed." -ForegroundColor Green
+        } catch {
+            Write-Error "Failed to invoke decoupled Auto-Update deployment script. Error: $_"
+        }
     }
 }
 
