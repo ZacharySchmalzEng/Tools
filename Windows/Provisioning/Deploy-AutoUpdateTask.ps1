@@ -58,7 +58,7 @@ if (($null -ne $OSInfo) -and ($OSInfo.Caption -match "Windows 10")) {
 
 # 4. Define Scheduled Task Parameters
 $TaskName = "Automated-OS-AutoUpdate"
-$TaskSignature = "Deployed via automated provisioning. Maintained by Zachary Schmalz (ZacharySchmalzEng)."
+$TaskSignature = "Deployed via automated provisioning. Maintained by Zachary Schmalz (Github: ZacharySchmalzEng)."
 $TaskDescription = "Automated silent app updates via Winget and OS patching via PSWindowsUpdate. | $TaskSignature"
 $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand"
 

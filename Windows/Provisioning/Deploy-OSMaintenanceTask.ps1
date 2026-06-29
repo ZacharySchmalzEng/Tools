@@ -86,7 +86,7 @@ Write-Host "[*] Detected OS: $OSCaption. Skip interactive tasks: $IsWindows10" -
 
 # 4. Define Scheduled Task Parameters
 $TaskName = "Automated-OS-Maintenance"
-$TaskSignature = "Deployed via automated provisioning. Maintained by Zachary Schmalz (ZacharySchmalzEng)."
+$TaskSignature = "Deployed via automated provisioning. Maintained by Zachary Schmalz (Github: ZacharySchmalzEng)."
 $TaskDescription = "Performs conditional OS maintenance, image servicing, and telemetry injection. | $TaskSignature"
 $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand"
 
