@@ -33,6 +33,105 @@ param (
 )
 
 # ==============================================================================
+# WINDOWS EVENT LOGGING
+# ==============================================================================
+
+$script:EventLogName = 'Application'
+$script:EventLogSource = 'Windows-Deployment-Tool.ps1'
+$script:EventLogEnabled = $true
+$script:EventLogInitialized = $false
+
+function Initialize-DeploymentEventLog {
+    if ($script:EventLogInitialized -or -not $script:EventLogEnabled) { return }
+
+    try {
+        if (-not [System.Diagnostics.EventLog]::SourceExists($script:EventLogSource)) {
+            New-EventLog -LogName $script:EventLogName -Source $script:EventLogSource -ErrorAction Stop
+        }
+        $script:EventLogInitialized = $true
+    } catch {
+        $script:EventLogEnabled = $false
+        Microsoft.PowerShell.Utility\Write-Warning "Could not initialize Windows event log source '$script:EventLogSource'. Event logging disabled. Error: $_"
+    }
+}
+
+function Write-DeploymentEventLogEntry {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message,
+
+        [ValidateSet('Information', 'Warning', 'Error')]
+        [string]$EntryType = 'Information',
+
+        [int]$EventId = 1000
+    )
+
+    if (-not $script:EventLogEnabled) { return }
+
+    Initialize-DeploymentEventLog | Out-Null
+    if (-not $script:EventLogInitialized) { return }
+
+    try {
+        Write-EventLog -LogName $script:EventLogName -Source $script:EventLogSource -EntryType $EntryType -EventId $EventId -Message $Message
+    } catch {
+        $script:EventLogEnabled = $false
+    }
+}
+
+function global:Write-Host {
+    [CmdletBinding(DefaultParameterSetName = 'Object')]
+    param(
+        [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+        [object]$Object,
+        [Nullable[System.ConsoleColor]]$BackgroundColor,
+        [Nullable[System.ConsoleColor]]$ForegroundColor,
+        [switch]$NoNewline,
+        [string]$Separator
+    )
+
+    $writeHostParams = @{ Object = $Object }
+    if ($PSBoundParameters.ContainsKey('BackgroundColor')) { $writeHostParams.BackgroundColor = $BackgroundColor }
+    if ($PSBoundParameters.ContainsKey('ForegroundColor')) { $writeHostParams.ForegroundColor = $ForegroundColor }
+    if ($PSBoundParameters.ContainsKey('NoNewline')) { $writeHostParams.NoNewline = $NoNewline.IsPresent }
+    if ($PSBoundParameters.ContainsKey('Separator')) { $writeHostParams.Separator = $Separator }
+
+    Microsoft.PowerShell.Utility\Write-Host @writeHostParams
+
+    if ($null -ne $Object) {
+        $messageText = [string]$Object
+        if (-not [string]::IsNullOrWhiteSpace($messageText)) {
+            Write-DeploymentEventLogEntry -Message $messageText -EntryType Information
+        }
+    }
+}
+
+function global:Write-Warning {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+        [object]$Message
+    )
+
+    Microsoft.PowerShell.Utility\Write-Warning -Message $Message
+    if ($null -ne $Message) {
+        Write-DeploymentEventLogEntry -Message ([string]$Message) -EntryType Warning -EventId 2000
+    }
+}
+
+function global:Write-Error {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+        [object]$Message
+    )
+
+    Microsoft.PowerShell.Utility\Write-Error -Message $Message
+    if ($null -ne $Message) {
+        Write-DeploymentEventLogEntry -Message ([string]$Message) -EntryType Error -EventId 3000
+    }
+}
+
+# ==============================================================================
 # HELPER FUNCTIONS
 # ==============================================================================
 

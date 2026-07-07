@@ -69,6 +69,28 @@ $Trigger.RandomDelay = "PT2H"
 $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
 
+function Set-ScheduledTaskCategory {
+    param(
+        [Parameter(Mandatory)]
+        [object]$TaskDefinition,
+
+        [Parameter(Mandatory)]
+        [string]$Category
+    )
+
+    foreach ($Target in @($TaskDefinition.RegistrationInfo, $TaskDefinition.Settings)) {
+        if ($null -eq $Target) { continue }
+        foreach ($PropName in @('Category', 'TaskCategory')) {
+            if ($Target.PSObject.Properties.Name -contains $PropName) {
+                $Target.$PropName = $Category
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
 # 5. Idempotent State Teardown
 $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($null -ne $ExistingTask) {
@@ -80,5 +102,10 @@ if ($null -ne $ExistingTask) {
 }
 
 # 6. Register the Task
-Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force -ErrorAction Stop | Out-Null
+$TaskDefinition = New-ScheduledTask -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings
+$TaskDefinition.RegistrationInfo.Description = $TaskDescription
+$TaskDefinition.RegistrationInfo.Author = 'Zachary Schmalz'
+$TaskDefinition.RegistrationInfo.Source = 'Windows-Deployment-Tool.ps1'
+$null = Set-ScheduledTaskCategory -TaskDefinition $TaskDefinition -Category 'Maintenance'
+Register-ScheduledTask -TaskName $TaskName -InputObject $TaskDefinition -Force -ErrorAction Stop | Out-Null
 Write-Host "[+] Scheduled task '$TaskName' successfully registered and initialized." -ForegroundColor Green

@@ -96,6 +96,28 @@ $Trigger.RandomDelay = "PT2H" # Strict ISO 8601 compliance required for XML pars
 $Principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
 
+function Set-ScheduledTaskCategory {
+    param(
+        [Parameter(Mandatory)]
+        [object]$TaskDefinition,
+
+        [Parameter(Mandatory)]
+        [string]$Category
+    )
+
+    foreach ($Target in @($TaskDefinition.RegistrationInfo, $TaskDefinition.Settings)) {
+        if ($null -eq $Target) { continue }
+        foreach ($PropName in @('Category', 'TaskCategory')) {
+            if ($Target.PSObject.Properties.Name -contains $PropName) {
+                $Target.$PropName = $Category
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
 # 5. Idempotent State Teardown
 $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($null -ne $ExistingTask) {
@@ -108,7 +130,12 @@ if ($null -ne $ExistingTask) {
 }
 
 # 6. Register the Maintenance Task
-Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force -ErrorAction Stop | Out-Null
+$MaintenanceTaskDefinition = New-ScheduledTask -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings
+$MaintenanceTaskDefinition.RegistrationInfo.Description = $TaskDescription
+$MaintenanceTaskDefinition.RegistrationInfo.Author = 'Zachary Schmalz'
+$MaintenanceTaskDefinition.RegistrationInfo.Source = 'Windows-Deployment-Tool.ps1'
+$null = Set-ScheduledTaskCategory -TaskDefinition $MaintenanceTaskDefinition -Category 'Maintenance'
+Register-ScheduledTask -TaskName $TaskName -InputObject $MaintenanceTaskDefinition -Force -ErrorAction Stop | Out-Null
 Write-Host "[+] Scheduled task '$TaskName' successfully registered and initialized." -ForegroundColor Green
 
 # 7. Register Weekly Auto-Update Task
@@ -147,7 +174,12 @@ else {
         
         $AutoUpdatePrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
-        Register-ScheduledTask -TaskName $AutoUpdateTaskName -Description $AutoUpdateDescription -Action $AutoUpdateAction -Trigger $AutoUpdateTrigger -Principal $AutoUpdatePrincipal -Settings $Settings -Force -ErrorAction Stop | Out-Null
+        $AutoUpdateTaskDefinition = New-ScheduledTask -Action $AutoUpdateAction -Trigger $AutoUpdateTrigger -Principal $AutoUpdatePrincipal -Settings $Settings
+        $AutoUpdateTaskDefinition.RegistrationInfo.Description = $AutoUpdateDescription
+        $AutoUpdateTaskDefinition.RegistrationInfo.Author = 'Zachary Schmalz'
+        $AutoUpdateTaskDefinition.RegistrationInfo.Source = 'Windows-Deployment-Tool.ps1'
+        $null = Set-ScheduledTaskCategory -TaskDefinition $AutoUpdateTaskDefinition -Category 'Maintenance'
+        Register-ScheduledTask -TaskName $AutoUpdateTaskName -InputObject $AutoUpdateTaskDefinition -Force -ErrorAction Stop | Out-Null
         Write-Host "[+] Scheduled task '$AutoUpdateTaskName' successfully registered and initialized." -ForegroundColor Green
     }
 }
