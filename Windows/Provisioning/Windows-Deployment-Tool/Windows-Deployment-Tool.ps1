@@ -250,7 +250,7 @@ if ($Help) {
     Write-Host " -Dev           Enables WSL, Virtual Machine Platform, Sudo (Inline), and SSH."
     Write-Host " -DualBoot      Configures auto-mounting for Linux partitions via WSL."
     Write-Host " -Apps          Installs general productivity apps (Brave, Discord, WhatsApp, etc.)"
-    Write-Host " -DevApps       Installs development tools (VS Code, Python, OpenSSL, etc.)"
+    Write-Host " -DevApps       Installs development tools (VS Code, Python, OpenSSL, Git, etc.)"
     Write-Host " -Cyber         Installs security tools (Wireshark, Nmap, etc.)"
     Write-Host " -Maker         Installs 3D printing tools (OrcaSlicer, Fusion360, etc.)"
     Write-Host " -Creators      Installs creative tools (Blender, Darktable, Audacity, etc.)"
@@ -594,7 +594,7 @@ if ($RunSoftware) {
     } 
     if ($DevApps) {
         $packages += "Microsoft.VisualStudioCode", "GitHub.GitHubDesktop", "Python.Python.3.13", 
-                     "Microsoft.PowerShell", "Notepad++.Notepad++", "PuTTY.PuTTY", "FireDaemon.OpenSSL"
+                     "Git.Git", "Microsoft.PowerShell", "Notepad++.Notepad++", "PuTTY.PuTTY", "FireDaemon.OpenSSL"
     } 
     if ($Cyber) {
         $packages += "WiresharkFoundation.Wireshark", "Insecure.Nmap", "Famatech.AdvancedIPScanner"
