@@ -8,6 +8,7 @@
 
 * **/Windows/Provisioning/**
     * `/Windows-Deployment-Tool/`: A modular, flag-based deployment framework for fresh OS installations. Executes telemetry hardening, system debloating, and dynamic software stack provisioning (e.g., `-DevApps`, `-Maker`, `-Cyber`) using `winget` and native installers. Supports automated teardown via a global `-Uninstall` modifier.
+    * `Deploy-AutoUpdateTask.ps1`: Registers a weekly, SYSTEM-context scheduled task for silent `winget` upgrades and Windows Update handling.
     * `Deploy-OSMaintenanceTask.ps1`: Registers a weekly, SYSTEM-context scheduled task for automated OS servicing. It performs TRIM, DNS cache clearing, `chkdsk` health scans, `SFC`/`DISM` repair attempts, and temporary-file cleanup, and can also register a companion auto-update task for supported systems.
 
-> **Security Note:** Most provisioning and backup scripts require execution via elevated sessions (root or Administrator) to modify system states, register scheduled tasks, or invoke VSS. Review all source code prior to execution.
+> **Security Note:** Provisioning and backup scripts require execution via elevated permissions to modify system states, register scheduled tasks, or invoke VSS. Review all source code prior to execution.
