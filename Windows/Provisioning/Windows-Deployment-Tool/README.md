@@ -33,14 +33,14 @@ powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -Syst
 ## ⚙️ Command-Line Flags
 
 **All Available Flags (Quick Reference):**
-`-Standard`, `-Complete`, `-System`, `-Debloat`, `-Security`, `-Dev`, `-DualBoot`, `-Apps`, `-DevApps`, `-Creators`, `-Cyber`, `-Maker`, `-Gaming`, `-Nvidia`, `-Help`
+`-Standard`, `-Complete`, `-Light`, `-System`, `-Debloat`, `-Security`, `-Dev`, `-DualBoot`, `-Apps`, `-DevApps`, `-Creators`, `-Cyber`, `-Maker`, `-Gaming`, `-Nvidia`, `-AutoUpdate`, `-Maintenance`, `-Uninstall`, `-Help`
 
 ### Deployment Profiles
 | Flag | Description |
 | :--- | :--- |
-| `-Standard` | **The Universal Baseline.** Executes: System, Debloat, Security, Dev, Apps, and DevApps. |
-| `-Complete` | **The Heavy Workstation.** Executes everything in Standard, PLUS: Cyber, Maker, Gaming, Creators, and Nvidia. |
- `-DualBoot` to prevent hardware-specific task errors on single-OS systems.* |
+| `-Standard` | **The Universal Baseline.** Executes: System, Debloat, Security, Apps, AutoUpdate, and Maintenance. |
+| `-Complete` | **The Heavy Workstation.** Executes everything in Standard, plus Dev, Cyber, Maker, Gaming, Creators, and Nvidia. |
+| `-Light` | **The Lightweight Baseline.** Executes only System, Debloat, and Security with no application installs. |
 
 ### Core OS Options
 | Flag | Description |
@@ -62,6 +62,17 @@ powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1 -Syst
 | `-Gaming` | Steam, OBS Studio, Blizzard Battle.net. |
 | `-Nvidia` | Dynamically fetches and installs the latest NVIDIA App directly from Nvidia's servers. |
 
+### Maintenance & Automation
+| Flag | Description |
+| :--- | :--- |
+| `-AutoUpdate` | Configures a weekly scheduled task for silent `winget` upgrades and Windows Update handling. |
+| `-Maintenance` | Configures a weekly scheduled task for TRIM, DNS cache clearing, `chkdsk` health checks, `SFC`/`DISM` repair attempts, and temporary-file cleanup. |
+
+### Global Modifiers
+| Flag | Description |
+| :--- | :--- |
+| `-Uninstall` | Reverts previously applied provisioning changes and uninstalls applications that match the selected deployment modules. |
+| `-Help` | Displays the built-in help menu and exits. |
 ## 📝 Important Notes
 
 * **Execution Policy**: You **must** invoke the script using `powershell.exe -ExecutionPolicy Bypass -File .\Windows-Deployment-Tool.ps1`. The script no longer attempts to bypass the policy internally, as strictly restricted systems will block the file from loading before the internal bypass function can even execute.

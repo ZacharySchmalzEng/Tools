@@ -78,6 +78,18 @@ function Write-DeploymentEventLogEntry {
     }
 }
 
+function Convert-ToDisplayText {
+    param([Parameter(ValueFromRemainingArguments = $true)][object]$InputObject)
+
+    if ($null -eq $InputObject) { return $null }
+
+    if ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string]) -and -not ($InputObject -is [System.Collections.IDictionary])) {
+        return (($InputObject | ForEach-Object { if ($null -ne $_) { $_.ToString() } }) -join [Environment]::NewLine)
+    }
+
+    return [string]$InputObject
+}
+
 function global:Write-Host {
     [CmdletBinding(DefaultParameterSetName = 'Object')]
     param(
@@ -98,7 +110,7 @@ function global:Write-Host {
     Microsoft.PowerShell.Utility\Write-Host @writeHostParams
 
     if ($null -ne $Object) {
-        $messageText = [string]$Object
+        $messageText = Convert-ToDisplayText -InputObject $Object
         if (-not [string]::IsNullOrWhiteSpace($messageText)) {
             Write-DeploymentEventLogEntry -Message $messageText -EntryType Information
         }
@@ -112,9 +124,10 @@ function global:Write-Warning {
         [object]$Message
     )
 
-    Microsoft.PowerShell.Utility\Write-Warning -Message $Message
-    if ($null -ne $Message) {
-        Write-DeploymentEventLogEntry -Message ([string]$Message) -EntryType Warning -EventId 2000
+    $messageText = Convert-ToDisplayText -InputObject $Message
+    Microsoft.PowerShell.Utility\Write-Warning -Message $messageText
+    if (-not [string]::IsNullOrWhiteSpace($messageText)) {
+        Write-DeploymentEventLogEntry -Message $messageText -EntryType Warning -EventId 2000
     }
 }
 
@@ -125,9 +138,10 @@ function global:Write-Error {
         [object]$Message
     )
 
-    Microsoft.PowerShell.Utility\Write-Error -Message $Message
-    if ($null -ne $Message) {
-        Write-DeploymentEventLogEntry -Message ([string]$Message) -EntryType Error -EventId 3000
+    $messageText = Convert-ToDisplayText -InputObject $Message
+    Microsoft.PowerShell.Utility\Write-Error -Message $messageText
+    if (-not [string]::IsNullOrWhiteSpace($messageText)) {
+        Write-DeploymentEventLogEntry -Message $messageText -EntryType Error -EventId 3000
     }
 }
 
@@ -627,7 +641,7 @@ if ($RunSoftware) {
                 } else {
                     $null = winget list --id $pkg -e --accept-source-agreements
                     if ($LASTEXITCODE -eq 0) {
-                        Write-Host "$DisplayName is already installed (Verified via Deep Check). Skipping..." -ForegroundColor DarkGray
+                        Write-Host "$DisplayName is already installed (Verified via Deep Check). Skipping..." -ForegroundColor DarkGrayac
                     } else {
                         Write-Host "Installing $DisplayName via winget..."
                         winget install --id $pkg -e --silent --accept-source-agreements --accept-package-agreements --force
@@ -684,12 +698,19 @@ if ($RunSoftware) {
 
                     Write-Host "Starting silent installation from $InstallerPath..."
                     $nvProcess = Start-Process -FilePath $InstallerPath -ArgumentList '-s -n -passive -noreboot' -Wait -PassThru -ErrorAction Stop 
-
-                    if ($nvProcess.ExitCode -eq 3010) {
-                        Write-Host "NVIDIA App installed (Reboot Required: Code 3010)." -ForegroundColor Yellow
-                    } elseif ($nvProcess.ExitCode -ne 0 -and $nvProcess.ExitCode -ne $null) {
-                        Write-Warning "NVIDIA installer exited with code $($nvProcess.ExitCode)."
-                    } else { Write-Host "NVIDIA App installed successfully." -ForegroundColor Green }
+                    $exitCode = 0
+                    if (-not $nvProcess) {
+                        Write-Host "NVIDIA App installed successfully." -ForegroundColor Green
+                    } else {
+                        $exitCode = $nvProcess.ExitCode
+                        if ($exitCode -eq 3010) {
+                            Write-Host "NVIDIA App installed (Reboot Required: Code 3010)." -ForegroundColor Yellow
+                        } elseif ($exitCode -ne 0) {
+                            Write-Warning "NVIDIA installer exited with code $exitCode."
+                        } else {
+                            Write-Host "NVIDIA App installed successfully." -ForegroundColor Green
+                        }
+                    }
                 }
             } catch { Write-Warning "Could not install NVIDIA App. Error: $_" }
         }
@@ -718,7 +739,7 @@ if ($Maintenance) {
             if (Test-Path $LocalPath) {
                 Write-Host "--- Local module detected. Sourcing execution to $LocalPath ---" -ForegroundColor Yellow
                 & $LocalPath
-                if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { Write-Warning "Decoupled script returned a non-zero exit code." }
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { Write-Warning "Decoupled script returned a non-zero exit code." }
             } else {
                 Write-Host "--- Local module not found. Fetching fileless payload from Upstream Repository... ---" -ForegroundColor Yellow
                 
@@ -731,7 +752,7 @@ if ($Maintenance) {
             }
             Write-Host "Maintenance deployment wrapper execution completed." -ForegroundColor Green
         } catch {
-            Write-Error "Failed to invoke decoupled OS Maintenance deployment script. Error: $_"
+            Write-Error ("Failed to invoke decoupled OS Maintenance deployment script. Error: {0}" -f ($_.Exception.Message))
         }
     }
 }
@@ -757,7 +778,7 @@ if ($AutoUpdate) {
             if (Test-Path $LocalPath) {
                 Write-Host "--- Local module detected. Sourcing execution to $LocalPath ---" -ForegroundColor Yellow
                 & $LocalPath
-                if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { Write-Warning "Decoupled script returned a non-zero exit code." }
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { Write-Warning "Decoupled script returned a non-zero exit code." }
             } else {
                 Write-Host "--- Local module not found. Fetching fileless payload from Upstream Repository... ---" -ForegroundColor Yellow
                 $RemotePayload = Invoke-RestMethod -Uri $RepoURI -UseBasicParsing -ErrorAction Stop
@@ -768,7 +789,7 @@ if ($AutoUpdate) {
             }
             Write-Host "Auto-Update deployment wrapper execution completed." -ForegroundColor Green
         } catch {
-            Write-Error "Failed to invoke decoupled Auto-Update deployment script. Error: $_"
+            Write-Error ("Failed to invoke decoupled Auto-Update deployment script. Error: {0}" -f ($_.Exception.Message))
         }
     }
 }

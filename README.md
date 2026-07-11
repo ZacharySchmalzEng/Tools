@@ -29,7 +29,7 @@ The repository is logically segregated by Operating System and functional domain
 * **`/Windows/Data_Management/`**
   * `Invoke-ProfileMerge.ps1`: Resolves scattered user profiles from disorganized backups. Scans NTFS volumes for overlaps and utilizes SHA-256 cryptographic hashing to safely merge directories and deduplicate data.
 * **`/Windows/Provisioning/`**
-  * `Deploy-OSMaintenanceTask.ps1`: Deploys a fileless, Base64-encoded scheduled task for automated OS maintenance (SFC, DISM, NTFS health audits, and volume TRIM). Features randomized execution delays to mitigate I/O collisions across virtualized clusters.
+  * `Deploy-OSMaintenanceTask.ps1`: Registers a weekly, SYSTEM-context maintenance task that performs TRIM, DNS cache flushing, `chkdsk` health checks, `SFC`/`DISM` repair attempts, and temporary-file cleanup. It can also register a companion auto-update task for supported Windows systems.
   * `Windows-Deployment-Tool.ps1`: A massive, flag-based modular deployment script. Capable of debloating the OS, applying registry tweaks, hardening security/telemetry, and dynamically fetching/installing specific software stacks (Cybersecurity tools, 3D Printing slicers, Developer environments, etc.). *(See the dedicated README inside this folder for usage flags).*
 
 ---

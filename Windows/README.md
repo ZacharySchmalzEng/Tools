@@ -7,8 +7,7 @@
     * `ProfileMerge.ps1`: Heuristic discovery and deduplication engine for resolving cross-OS user profile collisions on shared NTFS volumes. Utilizes SHA-256 cryptographic hashing to identify true duplicates and enforces a declarative CSV state-plan architecture for safe, idempotent manual review prior to execution.
 
 * **/Windows/Provisioning/**
-    * `/Windows-Deployment-Tool/`: A modular, flag-based deployment framework for fresh OS installations. Executes telemetry hardening, system debloating, and dynamic software stack provisioning (e.g., `-DevApps`, `-Maker`, `-Cyber`) utilizing `winget` and native installers. Supports automated teardown via a global `-Uninstall` modifier.
-    * `Deploy-OSMaintenanceTask.ps1`: Registers an idempotent Scheduled Task for automated, monthly OS servicing. Utilizes a fileless execution architecture by embedding a Base64-encoded payload directly into the task XML
-    Executes conditional NTFS auditing (`chkdsk`), system file verification (`sfc`), and component store cleanup (`DISM`).
+    * `/Windows-Deployment-Tool/`: A modular, flag-based deployment framework for fresh OS installations. Executes telemetry hardening, system debloating, and dynamic software stack provisioning (e.g., `-DevApps`, `-Maker`, `-Cyber`) using `winget` and native installers. Supports automated teardown via a global `-Uninstall` modifier.
+    * `Deploy-OSMaintenanceTask.ps1`: Registers a weekly, SYSTEM-context scheduled task for automated OS servicing. It performs TRIM, DNS cache clearing, `chkdsk` health scans, `SFC`/`DISM` repair attempts, and temporary-file cleanup, and can also register a companion auto-update task for supported systems.
 
 > **Security Note:** Most provisioning and backup scripts require execution via elevated sessions (root or Administrator) to modify system states, register scheduled tasks, or invoke VSS. Review all source code prior to execution.
