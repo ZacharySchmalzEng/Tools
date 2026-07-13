@@ -1,6 +1,6 @@
 # System Provisioning & Automation Tools
 
-A centralized repository of PowerShell and Bash scripts designed to automate OS deployment, environment configuration, and routine maintenance across Windows 11 Pro and Fedora Linux.
+A centralized repository of PowerShell and Bash scripts designed to automate OS deployment, environment configuration, and routine maintenance across Windows 11 Pro and Linux.
 
 These tools are built with a focus on modularity, zero-trust security principles, and reducing the friction of rebuilding bare-metal or virtualized environments from scratch.
 
@@ -8,7 +8,7 @@ These tools are built with a focus on modularity, zero-trust security principles
 
 The repository is logically segregated by Operating System and functional domain:
 
-### 🐧 Linux (Fedora/RHEL)
+### 🐧 Linux (Fedora/RHEL and Debian/Ubuntu)
 
 * **`/Linux/Backups/`**
   * `deploy-restic-gdrive.sh`: Deploys an automated, zero-knowledge encrypted backup infrastructure using Restic and Rclone.
@@ -20,7 +20,7 @@ The repository is logically segregated by Operating System and functional domain
 * **`/Linux/Networking/`**
   * `FedoraEnableSSH.sh`: Silently installs, configures, and validates the OpenSSH Server daemon. Features idempotency checks, Google Authenticator MFA PAM module enforcement, and automated configuration rollbacks.
 * **`/Linux/Provisioning/`**
-  * `fedora-deployment-tool.sh`: A comprehensive, modular deployment script for fresh Fedora 41+ installations. Features tiered security hardening, MFA SSH integration, and dynamic software stack provisioning via command-line flags. *(See the dedicated README inside this folder for usage flags).*
+  * `Linux-Deployment-Tool.sh`: A comprehensive, modular deployment script for fresh Linux installations. Features tiered security hardening, MFA SSH integration, distro-aware package management, and GPU-aware driver selection via command-line flags. *(See the dedicated README inside this folder for usage flags).*
 
 ### 🪟 Windows (Windows 11 Pro)
 

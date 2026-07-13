@@ -1,22 +1,20 @@
 #!/bin/bash
 # ==============================================================================
 # SYNOPSIS
-#     Automated Fedora 41+ provisioning and environment setup script.
+#     Automated Linux provisioning and environment setup script.
 #
 # DESCRIPTION
-#     This script provides a modular, flag-based deployment tool for Fedora Linux.
-#     It combines system updates, SSH/2FA provisioning, gaming setups, 
-#     application deployments, and tiered system hardening.
+#     This script provides a modular, flag-based deployment tool for modern Linux
+#     distributions. It combines system updates, SSH/2FA provisioning, gaming
+#     setup, application deployment, and tiered system hardening.
 #
 # AUTHOR
 #     Zachary Schmalz
 #
 # NOTES
-#     Version:        1.0 (Beta)
-#     Requirements:   Fedora Linux 41+, Bash, Active Internet Connection.
-#     Execution:      Must be run with sudo/root privileges.
-# ==============================================================================
-
+#     Version:        1.2
+#     Requirements:   Bash, root/sudo privileges, active internet connection.
+#     Supported OS:   Fedora/RHEL-style systems and Debian/Ubuntu-style systems.
 # ------------------------------------------------------------------------------
 # 1. STRICT MODE & ERROR HANDLING
 # ------------------------------------------------------------------------------
@@ -36,6 +34,227 @@ log_info()    { echo -e "${COLOR_INFO}[INFO] $1${COLOR_RESET}"; }
 log_success() { echo -e "${COLOR_SUCCESS}[+] $1${COLOR_RESET}"; }
 log_warn()    { echo -e "${COLOR_WARN}[!] $1${COLOR_RESET}"; }
 log_error()   { echo -e "${COLOR_ERROR}[ERROR] $1${COLOR_RESET}" >&2; }
+
+trap 'handle_error $? $LINENO' ERR
+
+handle_error() {
+    local exit_code="${1:-0}"
+    local line_number="${2:-unknown}"
+    if [[ "$exit_code" -ne 0 ]]; then
+        log_error "Command failed at line ${line_number} with exit code ${exit_code}."
+    fi
+}
+
+run_cmd() {
+    local description="$1"
+    shift
+    log_info "$description"
+    "$@"
+}
+
+DISTRO_FAMILY="unknown"
+DISTRO_NAME="unknown"
+SSH_SERVICE="sshd"
+
+detect_distro() {
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        . /etc/os-release
+        DISTRO_NAME="${NAME:-unknown}"
+        case "${ID,,}" in
+            fedora|rhel|centos|rocky|almalinux)
+                DISTRO_FAMILY="rpm"
+                SSH_SERVICE="sshd"
+                ;;
+            debian|ubuntu|linuxmint|pop)
+                DISTRO_FAMILY="deb"
+                SSH_SERVICE="ssh"
+                ;;
+            *)
+                DISTRO_FAMILY="unknown"
+                SSH_SERVICE="sshd"
+                ;;
+        esac
+    fi
+}
+
+refresh_package_cache() {
+    case "$DISTRO_FAMILY" in
+        rpm)
+            if ! run_cmd "Refreshing DNF package metadata" dnf makecache --refresh; then
+                log_warn "DNF metadata refresh failed. Continuing..."
+            fi
+            ;;
+        deb)
+            export DEBIAN_FRONTEND=noninteractive
+            if ! run_cmd "Refreshing APT package metadata" apt-get update; then
+                log_warn "APT metadata refresh failed. Continuing..."
+            fi
+            ;;
+    esac
+}
+
+resolve_package_name() {
+    local package="$1"
+    case "$DISTRO_FAMILY" in
+        deb)
+            case "$package" in
+                btop) echo "btop" ;;
+                bat) echo "bat" ;;
+                eza) echo "eza" ;;
+                plocate) echo "plocate" ;;
+                mediawriter) echo "gnome-multi-writer" ;;
+                p7zip-plugins) echo "p7zip-full" ;;
+                vlc) echo "vlc" ;;
+                timeshift) echo "timeshift" ;;
+                remmina) echo "remmina" ;;
+                wireshark-qt) echo "wireshark" ;;
+                nmap-ncat) echo "netcat" ;;
+                prusa-slicer) echo "prusa-slicer" ;;
+                darktable) echo "darktable" ;;
+                blender) echo "blender" ;;
+                audacity) echo "audacity" ;;
+                inkscape) echo "inkscape" ;;
+                obs-studio) echo "obs-studio" ;;
+                steam) echo "steam" ;;
+                lutris) echo "lutris" ;;
+                winetricks) echo "winetricks" ;;
+                openssh-server) echo "openssh-server" ;;
+                google-authenticator) echo "libpam-google-authenticator" ;;
+                dnf-automatic) echo "unattended-upgrades" ;;
+                audit) echo "auditd" ;;
+                *) echo "$package" ;;
+            esac
+            ;;
+        *)
+            echo "$package"
+            ;;
+    esac
+}
+
+pkg_install() {
+    local packages=("$@")
+    if [[ ${#packages[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local resolved_packages=()
+    local package
+    for package in "${packages[@]}"; do
+        resolved_packages+=("$(resolve_package_name "$package")")
+    done
+
+    local install_cmd=()
+    case "$DISTRO_FAMILY" in
+        rpm)
+            install_cmd=(dnf)
+            if [[ "$AUTO_YES" == "-y" ]]; then
+                install_cmd+=(-y)
+            fi
+            install_cmd+=(install)
+            ;;
+        deb)
+            export DEBIAN_FRONTEND=noninteractive
+            install_cmd=(apt-get)
+            if [[ "$AUTO_YES" == "-y" ]]; then
+                install_cmd+=(--yes)
+            fi
+            install_cmd+=(install)
+            ;;
+        *)
+            log_warn "Unsupported package manager for distro: $DISTRO_NAME"
+            return 1
+            ;;
+    esac
+
+    refresh_package_cache
+    install_cmd+=("${resolved_packages[@]}")
+
+    if ! run_cmd "Installing packages: ${resolved_packages[*]}" "${install_cmd[@]}"; then
+        log_warn "Package installation failed for: ${resolved_packages[*]}"
+        return 1
+    fi
+}
+
+update_system() {
+    local update_cmd=()
+    case "$DISTRO_FAMILY" in
+        rpm)
+            update_cmd=(dnf)
+            if [[ "$AUTO_YES" == "-y" ]]; then
+                update_cmd+=(-y)
+            fi
+            update_cmd+=(upgrade)
+            if [[ -n "$DOWNLOAD_ONLY" ]]; then
+                update_cmd+=("$DOWNLOAD_ONLY")
+            fi
+            ;;
+        deb)
+            export DEBIAN_FRONTEND=noninteractive
+            update_cmd=(apt-get)
+            if [[ "$AUTO_YES" == "-y" ]]; then
+                update_cmd+=(--yes)
+            fi
+            update_cmd+=(upgrade)
+            if [[ -n "$DOWNLOAD_ONLY" ]]; then
+                update_cmd+=("$DOWNLOAD_ONLY")
+            fi
+            ;;
+        *)
+            log_warn "Unsupported package manager for distro: $DISTRO_NAME"
+            return 1
+            ;;
+    esac
+
+    refresh_package_cache
+    if ! run_cmd "Updating system packages" "${update_cmd[@]}"; then
+        log_warn "System package update failed."
+        return 1
+    fi
+}
+
+ensure_flatpak() {
+    if ! command -v flatpak &>/dev/null; then
+        log_info "Installing Flatpak support..."
+        case "$DISTRO_FAMILY" in
+            rpm)
+                if ! run_cmd "Installing Flatpak" dnf install ${AUTO_YES:+$AUTO_YES} flatpak; then
+                    log_warn "Flatpak installation failed."
+                fi
+                ;;
+            deb)
+                export DEBIAN_FRONTEND=noninteractive
+                refresh_package_cache
+                if ! run_cmd "Installing Flatpak" apt-get install ${AUTO_YES:+$AUTO_YES} flatpak; then
+                    log_warn "Flatpak installation failed."
+                fi
+                ;;
+        esac
+    fi
+
+    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+}
+
+install_flatpak_app() {
+    local app="$1"
+    if [[ "$AUTO_YES" == "-y" ]]; then
+        flatpak install --assumeyes flathub "$app" || log_warn "Failed to install Flatpak app: $app"
+    else
+        flatpak install flathub "$app" || log_warn "Failed to install Flatpak app: $app"
+    fi
+}
+
+service_enable() {
+    local service_name="$1"
+    if ! run_cmd "Enabling service: $service_name" systemctl enable --now "$service_name"; then
+        systemctl enable "$service_name" 2>/dev/null || true
+    fi
+}
+
+service_restart() {
+    local service_name="$1"
+    systemctl restart "$service_name" 2>/dev/null || true
+}
 
 print_usage() {
     echo -e "\n==============================================================="
@@ -90,6 +309,8 @@ UNATTENDED=false
 AUTO_YES=""
 DOWNLOAD_ONLY=""
 
+detect_distro
+
 if [[ "$#" -eq 0 ]]; then
     print_usage
     exit 0
@@ -113,7 +334,7 @@ while [[ "$#" -gt 0 ]]; do
         --debug) RUN_DEBUG=true ;;
         --unattended) UNATTENDED=true ;;
         -y) AUTO_YES="-y" ;;
-        -d) DOWNLOAD_ONLY="--downloadonly" ;;
+        -d) if [[ "$DISTRO_FAMILY" == "deb" ]]; then DOWNLOAD_ONLY="--download-only"; else DOWNLOAD_ONLY="--downloadonly"; fi ;;
         --help|-h) print_usage; exit 0 ;;
         *) log_error "Unknown parameter passed: $1"; print_usage; exit 1 ;;
     esac
@@ -185,11 +406,15 @@ fi
 # ==============================================================================
 if [[ "$RUN_UPDATE" == true ]]; then
     echo -e "\n\e[35m[========== STARTING UPDATE MODULE ==========]\e[0m"
-    log_info "Running DNF updates..."
-    eval dnf upgrade $AUTO_YES $DOWNLOAD_ONLY
+    log_info "Running system package updates..."
+    if ! update_system; then
+        log_warn "Package updates reported issues. Continuing..."
+    fi
 
-    log_info "Running Flatpak updates..."
-    eval flatpak upgrade $AUTO_YES || true
+    if command -v flatpak &> /dev/null; then
+        log_info "Running Flatpak updates..."
+        flatpak upgrade ${AUTO_YES:+--assumeyes} || true
+    fi
 
     if command -v snap &> /dev/null; then
         log_info "Running Snap refresh..."
@@ -204,17 +429,24 @@ fi
 if [[ "$RUN_APPS" == true ]]; then
     echo -e "\n\e[35m[========== STARTING APPS & QoL MODULE ==========]\e[0m"
     readonly QOL_APPS=(timeshift btop bat eza plocate mediawriter p7zip p7zip-plugins vlc)
-    eval dnf install "${QOL_APPS[@]}" $AUTO_YES
-
-    if [[ "$DESKTOP_ENV" == "GNOME" ]]; then
-        eval dnf install baobab gnome-tweaks $AUTO_YES
-    elif [[ "$DESKTOP_ENV" == "KDE" ]]; then
-        eval dnf install filelight $AUTO_YES
+    if ! pkg_install "${QOL_APPS[@]}"; then
+        log_warn "Some QoL packages could not be installed. Continuing..."
     fi
 
+    if [[ "$DESKTOP_ENV" == "GNOME" ]]; then
+        if ! pkg_install baobab gnome-tweaks; then
+            log_warn "Some GNOME QoL packages could not be installed. Continuing..."
+        fi
+    elif [[ "$DESKTOP_ENV" == "KDE" ]]; then
+        if ! pkg_install filelight; then
+            log_warn "Some KDE QoL packages could not be installed. Continuing..."
+        fi
+    fi
+
+    ensure_flatpak
     readonly FLATPAK_APPS=(com.brave.Browser com.google.Chrome md.obsidian.Obsidian org.signal.Signal)
     for app in "${FLATPAK_APPS[@]}"; do
-        eval flatpak install flathub "$app" $AUTO_YES || log_warn "Failed to install $app"
+        install_flatpak_app "$app"
     done
 
     updatedb || true
@@ -226,11 +458,14 @@ fi
 # ==============================================================================
 if [[ "$RUN_DEVAPPS" == true ]]; then
     echo -e "\n\e[35m[========== STARTING DEV APPS MODULE ==========]\e[0m"
-    eval dnf install python3 openssl remmina $AUTO_YES
+    if ! pkg_install python3 openssl remmina; then
+        log_warn "Some development packages could not be installed. Continuing..."
+    fi
 
+    ensure_flatpak
     readonly DEV_FLATPAKS=(com.visualstudio.code io.github.shiftey.Desktop com.microsoft.PowerShell)
     for app in "${DEV_FLATPAKS[@]}"; do
-        eval flatpak install flathub "$app" $AUTO_YES || log_warn "Failed to install $app"
+        install_flatpak_app "$app"
     done
     log_success "Dev Apps module complete."
 fi
@@ -241,7 +476,9 @@ fi
 if [[ "$RUN_CYBER" == true ]]; then
     echo -e "\n\e[35m[========== STARTING CYBER MODULE ==========]\e[0m"
     readonly CYBER_PKGS=(wireshark-qt nmap tcpdump nmap-ncat)
-    eval dnf install "${CYBER_PKGS[@]}" $AUTO_YES
+    if ! pkg_install "${CYBER_PKGS[@]}"; then
+        log_warn "Some cybersecurity packages could not be installed. Continuing..."
+    fi
     usermod -aG wireshark "$SUDO_USER" || true
     log_success "Cyber module complete."
 fi
@@ -251,10 +488,13 @@ fi
 # ==============================================================================
 if [[ "$RUN_MAKER" == true ]]; then
     echo -e "\n\e[35m[========== STARTING MAKER MODULE ==========]\e[0m"
-    eval dnf install prusa-slicer $AUTO_YES
+    if ! pkg_install prusa-slicer; then
+        log_warn "The PrusaSlicer package could not be installed. Continuing..."
+    fi
+    ensure_flatpak
     readonly MAKER_FLATPAKS=(com.softfever.OrcaSlicer com.bambulab.BambuStudio)
     for app in "${MAKER_FLATPAKS[@]}"; do
-        eval flatpak install flathub "$app" $AUTO_YES || log_warn "Failed to install $app"
+        install_flatpak_app "$app"
     done
     log_success "Maker module complete."
 fi
@@ -262,7 +502,9 @@ fi
 if [[ "$RUN_CREATORS" == true ]]; then
     echo -e "\n\e[35m[========== STARTING CREATORS MODULE ==========]\e[0m"
     readonly CREATOR_PKGS=(darktable blender audacity inkscape obs-studio)
-    eval dnf install "${CREATOR_PKGS[@]}" $AUTO_YES
+    if ! pkg_install "${CREATOR_PKGS[@]}"; then
+        log_warn "Some creator packages could not be installed. Continuing..."
+    fi
     log_success "Creators module complete."
 fi
 
@@ -272,27 +514,39 @@ fi
 if [[ "$RUN_HARDEN" == true ]]; then
     echo -e "\n\e[35m[========== STARTING STANDARD HARDENING ==========]\e[0m"
     
-    log_info "Verifying SELinux Enforcement..."
-    if command -v setenforce &> /dev/null; then
-        setenforce 1 || true
-        sed -i -E 's/^SELINUX=.*/SELINUX=enforcing/' /etc/selinux/config
-        log_success "SELinux verified/set to Enforcing."
+    if [[ "$DISTRO_FAMILY" == "rpm" ]]; then
+        log_info "Verifying SELinux Enforcement..."
+        if command -v setenforce &> /dev/null; then
+            setenforce 1 || true
+            sed -i -E 's/^SELINUX=.*/SELINUX=enforcing/' /etc/selinux/config
+            log_success "SELinux verified/set to Enforcing."
+        fi
     fi
 
     log_info "Configuring Automatic Security Updates..."
-    eval dnf install dnf-automatic $AUTO_YES
-    readonly DNF_AUTO_CONF="/etc/dnf/automatic.conf"
-    sed -i -E 's/^upgrade_type =.*/upgrade_type = security/' "$DNF_AUTO_CONF"
-    sed -i -E 's/^download_updates =.*/download_updates = yes/' "$DNF_AUTO_CONF"
-    sed -i -E 's/^apply_updates =.*/apply_updates = yes/' "$DNF_AUTO_CONF"
-    systemctl enable --now dnf-automatic.timer
+    if [[ "$DISTRO_FAMILY" == "rpm" ]]; then
+        pkg_install dnf-automatic
+        readonly DNF_AUTO_CONF="/etc/dnf/automatic.conf"
+        sed -i -E 's/^upgrade_type =.*/upgrade_type = security/' "$DNF_AUTO_CONF"
+        sed -i -E 's/^download_updates =.*/download_updates = yes/' "$DNF_AUTO_CONF"
+        sed -i -E 's/^apply_updates =.*/apply_updates = yes/' "$DNF_AUTO_CONF"
+        service_enable dnf-automatic.timer
+    else
+        pkg_install unattended-upgrades apt-listchanges
+        cat <<'EOF' > /etc/apt/apt.conf.d/20auto-upgrades
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+        service_enable unattended-upgrades
+    fi
     log_success "Automated background security patching enabled."
 
-    if rpm -q openssh-server &> /dev/null; then
+    if dpkg -s openssh-server &> /dev/null 2>&1 || rpm -q openssh-server &> /dev/null 2>&1; then
         log_info "Applying Standard SSH Hardening..."
         readonly SSHD_CONF="/etc/ssh/sshd_config"
         sed -i -E 's/^#?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONF"
-        systemctl restart sshd
+        service_restart "$SSH_SERVICE"
         log_success "Direct root login over SSH disabled."
     fi
     log_success "Standard hardening complete."
@@ -320,8 +574,8 @@ EOF
     log_success "Kernel network hardening applied (Ping disabled, strict routing)."
 
     log_info "Deploying and Configuring Auditd..."
-    eval dnf install audit $AUTO_YES
-    systemctl enable --now auditd
+    pkg_install audit
+    service_enable auditd
     readonly AUDIT_RULES="/etc/audit/rules.d/custom-security.rules"
     cat <<EOF > "$AUDIT_RULES"
 -w /etc/sudoers -p wa -k scope
@@ -333,12 +587,12 @@ EOF
     augenrules --load || log_warn "Failed to load audit rules."
     log_success "Audit daemon configured for high-fidelity credential/privilege event generation."
 
-    if rpm -q openssh-server &> /dev/null; then
+    if dpkg -s openssh-server &> /dev/null 2>&1 || rpm -q openssh-server &> /dev/null 2>&1; then
         log_info "Applying Strict SSH Hardening..."
         readonly SSHD_CONF="/etc/ssh/sshd_config"
         sed -i -E 's/^#?PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONF"
         sed -i -E 's/^#?X11Forwarding.*/X11Forwarding no/' "$SSHD_CONF"
-        systemctl restart sshd
+        service_restart "$SSH_SERVICE"
         log_success "SSH Password Authentication and X11 Forwarding disabled."
     fi
     log_success "Advanced hardening complete."
@@ -349,14 +603,18 @@ fi
 # ==============================================================================
 if [[ "$RUN_SSH" == true ]]; then
     echo -e "\n\e[35m[========== STARTING SSH PROVISIONING MODULE ==========]\e[0m"
-    if ! rpm -q openssh-server &> /dev/null; then
+    if ! dpkg -s openssh-server &> /dev/null 2>&1 && ! rpm -q openssh-server &> /dev/null 2>&1; then
         log_info "Installing OpenSSH Server..."
-        eval dnf install openssh-server $AUTO_YES
+        pkg_install openssh-server
     fi
 
     if [[ "$RUN_2FA" == true ]]; then
         log_info "Configuring Google Authenticator MFA for SSH..."
-        eval dnf install google-authenticator $AUTO_YES
+        if [[ "$DISTRO_FAMILY" == "deb" ]]; then
+            pkg_install libpam-google-authenticator
+        else
+            pkg_install google-authenticator
+        fi
         readonly SSHD_CONF="/etc/ssh/sshd_config"
         readonly PAM_CONF="/etc/pam.d/sshd"
 
@@ -369,10 +627,10 @@ if [[ "$RUN_SSH" == true ]]; then
         fi
     fi
 
-    systemctl enable sshd
-    systemctl restart sshd
+    service_enable "$SSH_SERVICE"
+    service_restart "$SSH_SERVICE"
 
-    if systemctl is-active --quiet sshd; then
+    if systemctl is-active --quiet "$SSH_SERVICE"; then
         if ss -lt | grep -q ssh || true; then
             log_success "SSH Status is online and actively listening."
         else
@@ -395,41 +653,67 @@ fi
 if [[ "$RUN_DISCORD" == true ]]; then
     echo -e "\n\e[35m[========== STARTING DISCORD TRANSITION MODULE ==========]\e[0m"
     if flatpak list | grep -q "discord" || true; then
-        eval flatpak uninstall $AUTO_YES "discord" || true
+        flatpak uninstall ${AUTO_YES:+--assumeyes} "discord" || true
     fi
-    eval dnf install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm $AUTO_YES || true
-    eval dnf install https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm $AUTO_YES || true
-    eval dnf install discord $AUTO_YES
+    if [[ "$DISTRO_FAMILY" == "rpm" ]]; then
+        pkg_install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm || true
+        pkg_install https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm || true
+        pkg_install discord
+    else
+        log_warn "Discord transition is currently implemented for RPM-based systems. Skipping on this distro."
+    fi
     log_success "Discord transition complete."
 fi
 
 if [[ "$RUN_GAMING" == true ]]; then
     echo -e "\n\e[35m[========== STARTING GAMING & DRIVER MODULE ==========]\e[0m"
-    readonly PRE_PKGS=(flatpak snap dnf-plugins-core)
-    eval dnf install "${PRE_PKGS[@]}" $AUTO_YES
-    eval dnf install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm $AUTO_YES || true
-    eval dnf install https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm $AUTO_YES || true
+    if [[ "$DISTRO_FAMILY" == "rpm" ]]; then
+        readonly PRE_PKGS=(flatpak snap dnf-plugins-core)
+        pkg_install "${PRE_PKGS[@]}"
+        pkg_install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm || true
+        pkg_install https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm || true
+        dnf group upgrade core ${AUTO_YES:+$AUTO_YES} || true
+    else
+        pkg_install flatpak snapd
+    fi
     
-    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
-    eval dnf copr enable t0xic0der/nvidia-auto-installer-for-fedora $AUTO_YES
-    
-    eval dnf group upgrade core $AUTO_YES
+    ensure_flatpak
     readonly GAMING_PKGS=(winetricks steam lutris)
-    eval dnf install "${GAMING_PKGS[@]}" $AUTO_YES
-    eval flatpak install flathub net.davidotek.pupgui2 $AUTO_YES || true
-    eval flatpak install flathub com.usebottles.bottles $AUTO_YES || true
+    pkg_install "${GAMING_PKGS[@]}"
+    install_flatpak_app net.davidotek.pupgui2 || true
+    install_flatpak_app com.usebottles.bottles || true
     
     fwupdmgr refresh --force || true
     fwupdmgr get-devices || true
-    fwupdmgr update $AUTO_YES || true
+    fwupdmgr update ${AUTO_YES:+$AUTO_YES} || true
 
-    eval dnf install nvautoinstall $AUTO_YES
-    COMPATIBILITY=$(nvautoinstall compat 2>/dev/null || echo "failed")
-    
-    if [[ "$COMPATIBILITY" == *"expected to work correctly"* ]]; then
-        log_success "Compatible Nvidia GPU found. Deploying driver stack..."
-        nvautoinstall rpmadd driver nvrepo plcuda ffmpeg vulkan vidacc
-    fi
+    GPU_INFO=$(lspci -nn 2>/dev/null | grep -E 'VGA|3D controller' | head -n 1 || true)
+    case "$GPU_INFO" in
+        *"NVIDIA"*)
+            log_info "NVIDIA GPU detected. Installing proprietary driver stack..."
+            if [[ "$DISTRO_FAMILY" == "deb" ]]; then
+                if command -v ubuntu-drivers &>/dev/null; then
+                    ubuntu-drivers autoinstall || true
+                else
+                    pkg_install nvidia-driver firmware-misc-nonfree nvidia-settings vulkan-tools || true
+                fi
+            else
+                pkg_install akmod-nvidia xorg-x11-drv-nvidia nvidia-settings vulkan-tools || true
+            fi
+            ;;
+        *"AMD"*|*"Advanced Micro Devices"*)
+            log_info "AMD GPU detected. Installing Mesa/Vulkan driver stack..."
+            if [[ "$DISTRO_FAMILY" == "deb" ]]; then
+                pkg_install mesa-vulkan-drivers vulkan-tools libvulkan1 || true
+            else
+                pkg_install mesa-vulkan-drivers vulkan-tools vulkan-loader || true
+            fi
+            ;;
+        *)
+            log_warn "Unable to detect a supported NVIDIA or AMD GPU. Skipping driver installation."
+            ;;
+    esac
+
     log_success "Gaming module complete."
 fi
 

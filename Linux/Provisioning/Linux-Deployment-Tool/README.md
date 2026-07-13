@@ -1,25 +1,27 @@
-# Fedora 41+ Automated Deployment & Provisioning Tool
+# Linux Automated Deployment & Provisioning Tool
 
-> ⚠️ **BETA STATUS (v1.0 Beta):** This provisioning tool is currently in its initial beta testing phase. Because it actively modifies kernel parameters, PAM authentication, and core system utilities, it is highly recommended to perform an initial test run in a Virtual Machine (using the `--unattended` and `-d` dry-run flags) before deploying it to your primary bare-metal environment.
+> ⚠️ **BETA STATUS (v1.2 Beta):** This provisioning tool is currently in its initial beta testing phase. Because it actively modifies kernel parameters, PAM authentication, and core system utilities, it is highly recommended to perform an initial test run in a Virtual Machine (using the `--unattended` and `-d` dry-run flags) before deploying it to your primary bare-metal environment.
 
-**`fedora-deployment-tool.sh`** is a highly modular, flag-based Bash script designed to transform a fresh Fedora Linux installation into a hardened, fully configured power-user workstation.
+**`Linux-Deployment-Tool.sh`** is a highly modular, flag-based Bash script designed to transform a fresh Linux installation into a hardened, fully configured power-user workstation.
 
-Rather than a monolithic installation script, this tool uses command-line flags to let you pick and choose exactly which application stacks, system tweaks, and security hardening tiers you want to deploy. 
+Rather than a monolithic installation script, this tool uses command-line flags to let you pick and choose exactly which application stacks, system tweaks, and security hardening tiers you want to deploy.
 
 ## ✨ Features
 
 * **Strict Mode Execution:** Built with `set -euo pipefail` to ensure "fail-fast" reliability. If a critical pipeline fails, the script safely halts rather than leaving the system in an unpredictable state.
+* **Distro-Aware Package Management:** Automatically adapts package installation and updates for RPM-based and Debian-based systems.
+* **GPU-Aware Driver Selection:** Detects NVIDIA vs AMD GPUs and installs the appropriate driver stack for the current environment.
 * **Tiered Security Hardening:** Choose between a safe baseline (`--harden`) or a strict, zero-trust posture (`--harden-advanced`) that deploys `auditd`, modifies kernel sysctl routing, and disables SSH passwords.
 * **Native MFA Integration:** Easily enforce Google Authenticator 2FA on the OpenSSH daemon with a single flag (`--2fa`).
 * **Desktop Environment Aware:** Dynamically detects (or prompts for) your Desktop Environment (GNOME or KDE) to install the correct native Quality of Life tools.
-* **Unattended Mode:** Bypasses all interactive prompts and automatically answers "yes" to DNF/Flatpak transactions, making it perfect for rapid VM testing or automated bare-metal deployments.
+* **Unattended Mode:** Bypasses all interactive prompts and automatically answers "yes" to package-manager and Flatpak transactions, making it perfect for rapid VM testing or automated bare-metal deployments.
 
 ## 🚀 Usage
 
 ### Prerequisites
-* **OS**: Fedora Workstation 41 or newer.
+* **OS**: Fedora/RHEL-style systems or Debian/Ubuntu-style systems.
 * **Privileges**: Must be executed with **root/sudo** privileges.
-* **Internet**: Active connection required for DNF, Flatpak, and COPR repositories.
+* **Internet**: Active connection required for package repositories, Flatpak, and optional gaming repositories.
 
 ### Quick Start
 Before running the script, ensure it has the proper execution permissions:
@@ -43,14 +45,14 @@ sudo ./fedora-deployment-tool.sh --all -d                            # Dry-run: 
 | `--cyber` | **Security Analysis:** Wireshark (adds user to group), Nmap, TCPDump, and Ncat. |
 | `--maker` | **3D Printing:** PrusaSlicer, OrcaSlicer, and Bambu Studio. |
 | `--creators` | **Creative Suite:** Blender, Darktable, Audacity, Inkscape, and OBS Studio. |
-| `--gaming` | **Gaming & Drivers:** Configures RPM Fusion/Flathub, installs Steam, Lutris, Bottles, ProtonUp-Qt, and auto-detects/installs the Nvidia proprietary driver stack. |
-| `--ssh` | Installs, enables, and verifies the `sshd` daemon. |
-| `--discord` | Silently uninstalls the Flatpak version of Discord (if present) and replaces it with the native RPM package via RPM Fusion. |
+| `--gaming` | **Gaming & Drivers:** Configures the appropriate package sources, installs Steam/Lutris/Bottles, and auto-detects/installs NVIDIA or AMD driver stacks. |
+| `--ssh` | Installs, enables, and verifies the OpenSSH daemon. |
+| `--discord` | Silently uninstalls the Flatpak version of Discord (if present) and replaces it with the native package for the current distro family. |
 
 ### Security & Hardening Tiers
 | Flag | Description |
 | :--- | :--- |
-| `--harden` | **The Safe Baseline:** Verifies SELinux is Enforcing, configures `dnf-automatic` for unattended background security patching, and disables direct root login over SSH. |
+| `--harden` | **The Safe Baseline:** Verifies SELinux where available, configures unattended background security patching, and disables direct root login over SSH. |
 | `--harden-advanced` | **The Strict Posture:** *Warning: Disables SSH Password Auth.* Deploys `auditd` with high-fidelity credential rules, and modifies sysctl to drop ICMP (Ping) requests and enforce strict reverse path forwarding. |
 | `--2fa` | Integrates with `--ssh` to install `google-authenticator` and configure PAM/SSHD to enforce Multi-Factor Authentication for remote logins. |
 
@@ -67,7 +69,7 @@ sudo ./fedora-deployment-tool.sh --all -d                            # Dry-run: 
 
 * **Log Files**: Execution generates a detailed transcript in the `InstallerLogs` directory created alongside the script. Both standard output and errors are captured here.
 * **The `--harden-advanced` Flag**: If you use this flag, you **must** have an SSH Public Key (`id_rsa.pub` or `id_ed25519.pub`) copied to the machine's `~/.ssh/authorized_keys` file before closing your terminal session, as password authentication will be disabled.
-* **Nvidia Auto-Installer**: The gaming module uses the `t0xic0der/nvidia-auto-installer-for-fedora` COPR repository. It will automatically detect your GPU architecture and deploy the correct proprietary driver, CUDA, and Vulkan stack if compatible.
+* **Driver Auto-Selection**: The gaming module detects the GPU vendor and installs the appropriate NVIDIA or AMD driver stack for the current Linux distribution.
 
 ## ⚠️ Disclaimer
 This script modifies kernel parameters, PAM authentication, and core system utilities. Please review the code to ensure the configurations match your personal environment needs before executing.
