@@ -131,11 +131,8 @@ if ($null -ne $ExistingTask) {
 
 # 6. Register the Maintenance Task
 $MaintenanceTaskDefinition = New-ScheduledTask -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings
-$MaintenanceTaskDefinition.RegistrationInfo.Description = $TaskDescription
-$MaintenanceTaskDefinition.RegistrationInfo.Author = 'Zachary Schmalz'
-$MaintenanceTaskDefinition.RegistrationInfo.Source = 'Windows-Deployment-Tool.ps1'
 $null = Set-ScheduledTaskCategory -TaskDefinition $MaintenanceTaskDefinition -Category 'Maintenance'
-Register-ScheduledTask -TaskName $TaskName -InputObject $MaintenanceTaskDefinition -Force -ErrorAction Stop | Out-Null
+Register-ScheduledTask -TaskName $TaskName -InputObject $MaintenanceTaskDefinition -Description $TaskDescription -Force -ErrorAction Stop | Out-Null
 Write-Host "[+] Scheduled task '$TaskName' successfully registered and initialized." -ForegroundColor Green
 
 # 7. Register Weekly Auto-Update Task
@@ -175,11 +172,8 @@ else {
         $AutoUpdatePrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
         $AutoUpdateTaskDefinition = New-ScheduledTask -Action $AutoUpdateAction -Trigger $AutoUpdateTrigger -Principal $AutoUpdatePrincipal -Settings $Settings
-        $AutoUpdateTaskDefinition.RegistrationInfo.Description = $AutoUpdateDescription
-        $AutoUpdateTaskDefinition.RegistrationInfo.Author = 'Zachary Schmalz'
-        $AutoUpdateTaskDefinition.RegistrationInfo.Source = 'Windows-Deployment-Tool.ps1'
         $null = Set-ScheduledTaskCategory -TaskDefinition $AutoUpdateTaskDefinition -Category 'Maintenance'
-        Register-ScheduledTask -TaskName $AutoUpdateTaskName -InputObject $AutoUpdateTaskDefinition -Force -ErrorAction Stop | Out-Null
+        Register-ScheduledTask -TaskName $AutoUpdateTaskName -InputObject $AutoUpdateTaskDefinition -Description $AutoUpdateDescription -Force -ErrorAction Stop | Out-Null
         Write-Host "[+] Scheduled task '$AutoUpdateTaskName' successfully registered and initialized." -ForegroundColor Green
     }
 }

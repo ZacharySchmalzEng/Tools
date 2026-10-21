@@ -162,6 +162,74 @@ function Get-LinuxDiskPath {
     }
 }
 
+function Test-Wsl2HardwareSupport {
+    try {
+        $processors = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop)
+    } catch {
+        Write-Warning "Could not determine processor virtualization capabilities. Skipping DualBoot configuration. Error: $_"
+        return $false
+    }
+
+    if ($processors.Count -eq 0) {
+        Write-Warning "No processor information was available. Skipping DualBoot configuration."
+        return $false
+    }
+
+    $unsupportedProcessors = @($processors | Where-Object {
+        -not $_.VMMonitorModeExtensions -or
+        -not $_.SecondLevelAddressTranslationExtensions -or
+        -not $_.VirtualizationFirmwareEnabled
+    })
+
+    if ($unsupportedProcessors.Count -gt 0) {
+        Write-Warning "WSL 2 requires CPU virtualization, second-level address translation, and virtualization enabled in firmware. Skipping DualBoot configuration."
+        return $false
+    }
+
+    return $true
+}
+
+function Test-WslReadiness {
+    $wslCommand = Get-Command -Name 'wsl.exe' -ErrorAction SilentlyContinue
+    if ($null -eq $wslCommand) {
+        Write-Warning "WSL is not installed or wsl.exe is unavailable. Skipping DualBoot configuration."
+        return $false
+    }
+
+    try {
+        $wslHelp = (& $wslCommand.Path --help 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0 -or $wslHelp -notmatch '(?m)^\s*--mount(?:\s|$)') {
+            Write-Warning "The installed WSL command does not report --mount support. Update or install WSL before using DualBoot."
+            return $false
+        }
+
+        $wslStatus = (& $wslCommand.Path --status 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "WSL did not pass its status check. Initialize or update WSL before using DualBoot. Details: $($wslStatus.Trim())"
+            return $false
+        }
+    } catch {
+        Write-Warning "Could not run the WSL pre-check. Skipping DualBoot configuration. Error: $_"
+        return $false
+    }
+
+    foreach ($featureName in @('Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform')) {
+        try {
+            $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName -ErrorAction Stop
+        } catch {
+            Write-Warning "Could not check Windows optional feature '$featureName'. Skipping DualBoot configuration. Error: $_"
+            return $false
+        }
+
+        if ($feature.State -ne 'Enabled') {
+            Write-Warning "Windows optional feature '$featureName' is not enabled. Enable it and restart before using DualBoot."
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Test-IsServerOS {
     $OS = Get-CimInstance Win32_OperatingSystem
     return $OS.ProductType -ne 1
@@ -516,6 +584,11 @@ if ($Dev) {
 # ==============================================================================
 # MODULE: DUAL BOOT (Dynamic Linux Mounting)
 # ==============================================================================
+if ($DualBoot -and -not $Uninstall -and (-not (Test-Wsl2HardwareSupport) -or -not (Test-WslReadiness))) {
+    Write-Host "DualBoot setup skipped because its hardware or WSL requirements are not met." -ForegroundColor DarkYellow
+    $DualBoot = $false
+}
+
 if ($DualBoot) {
     $TaskName = "Mount-Linux-WSL"
     
