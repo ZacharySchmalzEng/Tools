@@ -102,7 +102,7 @@ if ($null -ne $ExistingTask) {
 }
 
 # 6. Register the Task
-$TaskDefinition = New-ScheduledTask -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings
+$TaskDefinition = New-ScheduledTask -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Description $TaskDescription
 $null = Set-ScheduledTaskCategory -TaskDefinition $TaskDefinition -Category 'Maintenance'
-Register-ScheduledTask -TaskName $TaskName -InputObject $TaskDefinition -Description $TaskDescription -Force -ErrorAction Stop | Out-Null
+Register-ScheduledTask -TaskName $TaskName -InputObject $TaskDefinition -Force -ErrorAction Stop | Out-Null
 Write-Host "[+] Scheduled task '$TaskName' successfully registered and initialized." -ForegroundColor Green
