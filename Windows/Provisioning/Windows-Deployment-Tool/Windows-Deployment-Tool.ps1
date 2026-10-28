@@ -779,7 +779,7 @@ if ($RunSoftware) {
                         if ($exitCode -eq 3010) {
                             Write-Host "NVIDIA App installed (Reboot Required: Code 3010)." -ForegroundColor Yellow
                         } elseif ($exitCode -ne 0) {
-                            Write-Warning "NVIDIA installer exited with code $exitCode."
+                            Write-Warning "NVIDIA installer exited with code $exitCode." -ForegroundColor Red
                         } else {
                             Write-Host "NVIDIA App installed successfully." -ForegroundColor Green
                         }
