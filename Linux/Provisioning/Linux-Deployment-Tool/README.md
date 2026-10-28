@@ -1,75 +1,91 @@
 # Linux Automated Deployment & Provisioning Tool
 
-> ⚠️ **BETA STATUS (v1.2 Beta):** This provisioning tool is currently in its initial beta testing phase. Because it actively modifies kernel parameters, PAM authentication, and core system utilities, it is highly recommended to perform an initial test run in a Virtual Machine (using the `--unattended` and `-d` dry-run flags) before deploying it to your primary bare-metal environment.
+> **Version 1.3:** This provisioning tool configures system packages, security settings, SSH/PAM, Secure Boot, and shared NTFS partitions. Test it in a virtual machine first and review the selected modules before running them on a primary system.
 
-**`Linux-Deployment-Tool.sh`** is a highly modular, flag-based Bash script designed to transform a fresh Linux installation into a hardened, fully configured power-user workstation.
+[`Linux-Deployment-Tool.sh`](./Linux-Deployment-Tool.sh) is a modular, flag-based Bash script for provisioning Fedora/RHEL-family and Debian/Ubuntu-family Linux systems. Select individual modules or run the standard set with `--all`.
 
-Rather than a monolithic installation script, this tool uses command-line flags to let you pick and choose exactly which application stacks, system tweaks, and security hardening tiers you want to deploy.
+## Features
 
-## ✨ Features
+* **Distro-aware package management:** Uses DNF on RPM-family systems and APT on Debian-family systems, with Flatpak and Snap updates where available.
+* **Dual-boot and Secure Boot setup:** Can prepare Fedora akmods Machine Owner Key (MOK) enrollment, set the hardware clock to local time, and configure non-system NTFS partitions for mounting.
+* **Gaming and graphics setup:** Installs gaming tools and selects NVIDIA or AMD drivers based on detected hardware.
+* **Tiered hardening:** Choose the baseline `--harden` module or the more restrictive `--harden-advanced` module.
+* **SSH and Google Authenticator:** Install OpenSSH and optionally configure PAM/SSHD for Google Authenticator MFA.
+* **Desktop-specific utilities:** The script prompts you to choose GNOME or KDE when run interactively. `--unattended` skips that prompt and selects KDE.
+* **Unattended execution:** Automatically answers yes to supported package-manager and Flatpak prompts and skips the interactive reboot prompt.
 
-* **Strict Mode Execution:** Built with `set -euo pipefail` to ensure "fail-fast" reliability. If a critical pipeline fails, the script safely halts rather than leaving the system in an unpredictable state.
-* **Distro-Aware Package Management:** Automatically adapts package installation and updates for RPM-based and Debian-based systems.
-* **GPU-Aware Driver Selection:** Detects NVIDIA vs AMD GPUs and installs the appropriate driver stack for the current environment.
-* **Tiered Security Hardening:** Choose between a safe baseline (`--harden`) or a strict, zero-trust posture (`--harden-advanced`) that deploys `auditd`, modifies kernel sysctl routing, and disables SSH passwords.
-* **Native MFA Integration:** Easily enforce Google Authenticator 2FA on the OpenSSH daemon with a single flag (`--2fa`).
-* **Desktop Environment Aware:** Dynamically detects (or prompts for) your Desktop Environment (GNOME or KDE) to install the correct native Quality of Life tools.
-* **Unattended Mode:** Bypasses all interactive prompts and automatically answers "yes" to package-manager and Flatpak transactions, making it perfect for rapid VM testing or automated bare-metal deployments.
+## Requirements and cautions
 
-## 🚀 Usage
+* Run as root, typically with `sudo`.
+* Bash and an active internet connection are required.
+* Supported package-manager families are Fedora/RHEL-style (DNF) and Debian/Ubuntu-style (APT) distributions.
+* The script modifies system configuration, including SSH/PAM, sysctl, audit, `/etc/fstab`, and hardware clock settings, depending on selected modules. Review the options and test in a VM before applying them to a system you rely on.
+* `--harden-advanced` disables SSH password authentication when OpenSSH is installed. Confirm key-based access works before disconnecting.
+* `--dualboot` may require follow-up steps to disable Windows Fast Startup and enroll a MOK in UEFI.
+* `--2fa` configures Google Authenticator for SSH; before ending your current session, generate a token for the account that will log in using `google-authenticator`.
 
-### Prerequisites
-* **OS**: Fedora/RHEL-style systems or Debian/Ubuntu-style systems.
-* **Privileges**: Must be executed with **root/sudo** privileges.
-* **Internet**: Active connection required for package repositories, Flatpak, and optional gaming repositories.
+## Usage
 
-### Quick Start
-Before running the script, ensure it has the proper execution permissions:
+Run commands from this directory:
+
 ```bash
-chmod +x fedora-deployment-tool.sh
+chmod +x Linux-Deployment-Tool.sh
 
-sudo ./fedora-deployment-tool.sh --help                              # Displays the help menu
-sudo ./fedora-deployment-tool.sh --all                               # The Universal Baseline (All standard modules)
-sudo ./fedora-deployment-tool.sh --all --2fa --unattended            # Hands-free deployment with MFA SSH
-sudo ./fedora-deployment-tool.sh --update --harden-advanced --debug  # Update, strict harden, and trace commands
-sudo ./fedora-deployment-tool.sh --all -d                            # Dry-run: Resolve and download packages only
+sudo ./Linux-Deployment-Tool.sh --help
+sudo ./Linux-Deployment-Tool.sh --apps
+sudo ./Linux-Deployment-Tool.sh --ssh --2fa
+sudo ./Linux-Deployment-Tool.sh --update -d
+sudo ./Linux-Deployment-Tool.sh --all --unattended
 ```
-## ⚙️ Command-Line Flags
 
-### Core Modules
-| Flag | Description |
+`--update -d` downloads DNF/APT system package updates without installing those updates; Flatpak upgrades and Snap refreshes still run normally when available. **This is not a general dry-run mode.** If `-d` is combined with other modules, those modules still run and may make system changes. For example, `--all -d` still performs the other `--all` actions.
+
+## Command-line options
+
+### Modules
+
+| Option | Description |
 | :--- | :--- |
-| `--update` | Sequentially upgrades DNF, Flatpak, and Snap packages. |
-| `--apps` | **System & Utilities:** Browsers (Brave, Chrome), Obsidian, Signal, Timeshift, btop, eza, plocate, and DE-specific tools (baobab/filelight). |
-| `--devapps` | **Development Stack:** Python 3, OpenSSL, VS Code, GitHub Desktop, PowerShell, and Remmina. |
-| `--cyber` | **Security Analysis:** Wireshark (adds user to group), Nmap, TCPDump, and Ncat. |
-| `--maker` | **3D Printing:** PrusaSlicer, OrcaSlicer, and Bambu Studio. |
-| `--creators` | **Creative Suite:** Blender, Darktable, Audacity, Inkscape, and OBS Studio. |
-| `--gaming` | **Gaming & Drivers:** Configures the appropriate package sources, installs Steam/Lutris/Bottles, and auto-detects/installs NVIDIA or AMD driver stacks. |
-| `--ssh` | Installs, enables, and verifies the OpenSSH daemon. |
-| `--discord` | Silently uninstalls the Flatpak version of Discord (if present) and replaces it with the native package for the current distro family. |
+| `--update` | Updates system packages, then Flatpak and Snap packages when available. |
+| `--dualboot` | Prepares Secure Boot MOK enrollment on supported RPM systems, sets the hardware RTC to local time, and configures detected non-Windows-system NTFS partitions for automounting. |
+| `--secureboot` | Alias for `--dualboot`. |
+| `--apps` | Installs system utilities such as Timeshift, btop, bat, eza, plocate, VLC, and archive tools; also installs Brave, Chrome, Obsidian, and Signal through Flatpak, plus GNOME- or KDE-specific utilities. |
+| `--devapps` | Installs Python, pip, OpenSSL, Remmina, VS Code and GitHub Desktop via Flatpak, and native PowerShell on RPM systems. |
+| `--cyber` | Installs Wireshark, Nmap, TCPDump, and Ncat. When invoked with `sudo`, adds the invoking user to the Wireshark group. |
+| `--maker` | Installs PrusaSlicer, OrcaSlicer, and Bambu Studio. |
+| `--creators` | Installs Blender, Darktable, Audacity, Inkscape, and OBS Studio. |
+| `--gaming` | Installs gaming tools, configures RPM Fusion on RPM systems, applies a gaming sysctl setting, and attempts GPU-specific NVIDIA or AMD driver setup. |
+| `--ssh` | Installs OpenSSH Server if needed, enables its service, and verifies its status. Combine with `--2fa` to configure Google Authenticator MFA. |
+| `--discord` | Replaces the Discord Flatpak with the native RPM package when run on an RPM-family system. The transition is not implemented for Debian-family systems. |
 
-### Security & Hardening Tiers
-| Flag | Description |
+### Security and hardening
+
+| Option | Description |
 | :--- | :--- |
-| `--harden` | **The Safe Baseline:** Verifies SELinux where available, configures unattended background security patching, and disables direct root login over SSH. |
-| `--harden-advanced` | **The Strict Posture:** *Warning: Disables SSH Password Auth.* Deploys `auditd` with high-fidelity credential rules, and modifies sysctl to drop ICMP (Ping) requests and enforce strict reverse path forwarding. |
-| `--2fa` | Integrates with `--ssh` to install `google-authenticator` and configure PAM/SSHD to enforce Multi-Factor Authentication for remote logins. |
+| `--harden` | Baseline hardening: enables SELinux enforcement when available on RPM systems, configures automatic security updates, and disables direct root SSH login when OpenSSH is installed. |
+| `--harden-advanced` | Advanced hardening: configures auditd rules and restrictive network sysctl settings, including disabling ICMP echo responses. When OpenSSH is installed, also disables SSH password authentication and X11 forwarding. Ensure SSH key access works first. |
+| `--2fa` | Configures Google Authenticator PAM and SSH settings. Use with `--ssh` so the SSH module installs the needed package and applies the configuration. |
+| `--mfa` | Alias for `--2fa`. |
 
-### Global Modifiers
-| Flag | Description |
+### Global options
+
+| Option | Description |
 | :--- | :--- |
-| `--all` | Executes all standard modules. *(Note: Intentionally excludes `--harden-advanced` and `--2fa` to prevent accidental lockouts).* |
-| `-y` | Auto-install (answers yes to all package manager prompts). |
-| `-d` | Download only (applies to DNF updates, excellent for dry-run validations). |
-| `--unattended` | Bypasses the DE prompt (defaults to KDE), suppresses the reboot prompt, and applies `-y` automatically. |
-| `--debug` | Enables `set -x` to print a trace of simple commands directly to the console and log file for deep troubleshooting. |
+| `--all` | Runs all standard modules, including `--dualboot` and `--harden`; excludes `--harden-advanced` and `--2fa`. |
+| `-y` | Automatically answers yes to supported package-manager prompts. |
+| `-d` | Requests download-only behavior for system package updates (`--update`): DNF on RPM systems or APT on Debian systems. It does not prevent other selected modules from making changes. |
+| `--unattended` | Skips the GNOME/KDE prompt, selects KDE, applies `-y`, and skips the interactive reboot prompt. |
+| `--debug` | Enables Bash command tracing for troubleshooting. |
+| `--help`, `-h` | Displays the help menu. |
 
-## 📝 Important Notes
+## After running
 
-* **Log Files**: Execution generates a detailed transcript in the `InstallerLogs` directory created alongside the script. Both standard output and errors are captured here.
-* **The `--harden-advanced` Flag**: If you use this flag, you **must** have an SSH Public Key (`id_rsa.pub` or `id_ed25519.pub`) copied to the machine's `~/.ssh/authorized_keys` file before closing your terminal session, as password authentication will be disabled.
-* **Driver Auto-Selection**: The gaming module detects the GPU vendor and installs the appropriate NVIDIA or AMD driver stack for the current Linux distribution.
+* **Logs:** The script writes its output to timestamped log files in the `InstallerLogs` directory alongside the script.
+* **Secure Boot:** If MOK enrollment is needed, follow the script's post-run instructions and confirm enrollment in UEFI's MokManager after reboot. In unattended mode, the script skips the interactive MOK import and prints the command to run manually.
+* **Dual boot:** If Windows Fast Startup prevents shared NTFS partitions from being accessed reliably, disable it from an elevated Windows PowerShell session with `powercfg /h off`.
+* **SSH MFA:** Generate the Google Authenticator token for the login account with `google-authenticator` before relying on MFA for remote access.
+* **Reboot:** Interactive runs may offer a reboot at the end. Unattended runs skip that prompt; restart manually when appropriate.
 
-## ⚠️ Disclaimer
-This script modifies kernel parameters, PAM authentication, and core system utilities. Please review the code to ensure the configurations match your personal environment needs before executing.
+## Disclaimer
+
+This tool can alter authentication, kernel/network settings, package sources, and filesystem configuration. Review the script and selected options before execution; use it only on systems for which you are authorized to make these changes.
