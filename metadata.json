@@ -1,0 +1,8 @@
+{
+  "name": "ZacharySchmalz Tools — OS Provisioning & Automation Studio",
+  "description": "Interactive command studio, script inspector, and deployment configurator for Zachary Schmalz's modular Windows 11 and Linux system provisioning, hardening, backup, and maintenance tool suite.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
