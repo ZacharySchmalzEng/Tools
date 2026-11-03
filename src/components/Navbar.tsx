@@ -41,7 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenQ
                   ZacharySchmalz<span className="text-cyan-400">/Tools</span>
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-mono">
-                  v2.0
+                  v2.0.1
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">

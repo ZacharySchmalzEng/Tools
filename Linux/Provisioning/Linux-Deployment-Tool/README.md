@@ -1,27 +1,21 @@
 # Linux Automated Deployment & Provisioning Tool
 
-> 🚀 **PRODUCTION STATUS (v2.0):** This deployment tool is production-ready with official public support. It features comprehensive self-bootstrapping, zero on-box prerequisites, multi-distro special handling, and hardware-aware driver orchestration. Feature requests, questions, and bug reports are actively supported via [GitHub Issues](https://github.com/ZacharySchmalzEng/Tools/issues).
+> 🚀 **PRODUCTION STATUS (v2.0.1):** This deployment tool is production-ready with official public support. It features comprehensive self-bootstrapping, zero on-box prerequisites, multi-distro special handling, and hardware-aware driver orchestration. Feature requests, questions, and bug reports are actively supported via [GitHub Issues](https://github.com/ZacharySchmalzEng/Tools/issues).
 
 **`Linux-Deployment-Tool.sh`** is a highly modular, flag-based Bash script designed to transform a fresh Linux installation into a hardened, fully configured power-user workstation.
 
 Rather than a monolithic installation script, this tool uses command-line flags to let you pick and choose exactly which application stacks, system tweaks, and security hardening tiers you want to deploy.
 
-## 📋 Release Changelog (v2.0)
-
-### 🛡️ Security Updates & CVE Mitigations
-* **OpenSSH CVE-2024-6387 ("regreSSHion") Mitigation:** Hardens `sshd_config` by capping `LoginGraceTime 20`, `MaxAuthTries 3`, `MaxSessions 4`, and `MaxStartups 10:30:60` to eliminate remote code execution attack windows.
-* **Interruption & SteamOS Lock Traps:** Unified `cleanup_handler` on `EXIT INT TERM HUP` guarantees automatic re-locking of SteamOS root protection (`steamos-readonly enable`) and secure purging of temp directories upon any termination.
-* **Ambient File Mode Hardening:** Enforces global `umask 077` at initialization; strictly sets `0700` permissions on `$LOG_DIR` and `0600` on `$LOG_FILE`.
-* **CIS Level 2 Kernel Sysctl Hardening:** Implements `fs.suid_dumpable = 0`, ASLR (`kernel.randomize_va_space = 2`), `log_martians = 1`, `rp_filter = 1`, and blocks source-routed/redirected ICMP traffic.
-* **Auditd Privilege & Identity Monitoring:** Deploys high-fidelity tracking rules on `/etc/sudoers`, `/etc/shadow`, `/etc/passwd`, `/etc/gshadow`, and `/etc/ssh/sshd_config`.
-* **PAM SSH 2FA Protection:** Provisions `pam_google_authenticator` with `nullok` during deployment to prevent catastrophic administrator lockout prior to user OTP token creation.
+## 📋 Release Changelog (v2.0.1)
 
 ### 🐛 Defect Resolutions & Bug Fixes
-* **Nobara Linux NVIDIA Packaging Conflict:** Bypasses manual RPM Fusion `akmod-nvidia` on Nobara to prevent fatal package transaction collisions with pre-installed `dkms-nvidia` from `nobara-nvidia-production`.
-* **PowerShell 404 Download Failures:** Replaced hardcoded/brittle GitHub RPM URLs with official Microsoft repository registration (`packages.microsoft.com`) and Flathub fallback.
-* **ShellCheck SC2155 Subshell Masking:** Split `readonly SCRIPT_DIR` declaration and assignment to preserve subshell exit code visibility.
-* **SteamOS GPG Keyring Initialization:** Automates `pacman-key --init` and `--populate archlinux holo` before package transactions to avoid GPG verification aborts.
-* **Debian/Ubuntu Debconf Freezes:** Enforces non-interactive frontends (`DEBIAN_FRONTEND=noninteractive`) across all `apt-get` operations.
+* **Flathub OrcaSlicer App ID Migration (v2.0.1):** Migrated package identifier from deprecated `com.softfever.OrcaSlicer` to `com.orcaslicer.OrcaSlicer`, with automated legacy fallback in `install_flatpak_app()` to prevent `error: Nothing matches in remote flathub`.
+* **Fatal sed /etc/dnf/automatic.conf Crash (Exit code 2) (v2.0.1):** Added auto-creation of missing `/etc/dnf/automatic.conf` templates on fresh/minimal systems, guarded against service modification in download-only mode (`-d`), and added dual timer support for both `dnf-automatic.timer` and modern `dnf5-automatic.timer`.
+* **Nobara Linux NVIDIA Packaging Conflict (v2.0):** Bypasses manual RPM Fusion `akmod-nvidia` on Nobara to prevent fatal package transaction collisions with pre-installed `dkms-nvidia` from `nobara-nvidia-production`.
+* **PowerShell 404 Download Failures (v2.0):** Replaced hardcoded/brittle GitHub RPM URLs with official Microsoft repository registration (`packages.microsoft.com`) and Flathub fallback.
+* **ShellCheck SC2155 Subshell Masking (v2.0):** Split `readonly SCRIPT_DIR` declaration and assignment to preserve subshell exit code visibility.
+* **SteamOS GPG Keyring Initialization (v2.0):** Automates `pacman-key --init` and `--populate archlinux holo` before package transactions to avoid GPG verification aborts.
+* **Debian/Ubuntu Debconf Freezes (v2.0):** Enforces non-interactive frontends (`DEBIAN_FRONTEND=noninteractive`) across all `apt-get` operations.
 
 ### 🚀 Feature Enhancements
 * **Multi-Distribution Engine:** Native specialized handling for Fedora Atomic (Silverblue, Bazzite, Kinoite), Arch Linux, SteamOS (Steam Deck), openSUSE (Tumbleweed & Leap), Nobara, Fedora, and Debian/Ubuntu.

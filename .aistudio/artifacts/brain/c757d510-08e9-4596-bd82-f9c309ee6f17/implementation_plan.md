@@ -1,140 +1,121 @@
-# Script Documentation & Hardening Flag Search Index Plan
+# Hotfix v2.0.1: OrcaSlicer Flatpak Migration & DNF Automatic Hardening Plan
 
-A comprehensive plan to build an instant search index inside the `ScriptInspector` component, enabling administrators to search across deployment flags, security hardening modules, key features, and technical documentation with real-time keyword highlighting and active vs. catalog-wide scope toggling.
+A targeted remediation plan for Hotfix Release `v2.0.1` to resolve two critical deployment defects: the Flathub OrcaSlicer package ID migration failure and the fatal `sed: can't read /etc/dnf/automatic.conf` crash on RPM/Fedora systems.
 
 ---
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> **Confirmed User Decisions (from Phase 1 Clarifications)**:
-> 1. **Search Scope**: Search within the **active script** by default, with an instant toggle switch to expand the index **catalog-wide across all scripts**.
-> 2. **Indexed Content Domain**: Indexes all **command-line flags**, **security hardening modules & CVE controls**, **key engineering features**, and **architectural documentation**.
-> 3. **Presentation & UX**: A **real-time filter bar** embedded directly above the inspector content area with **highlighted keyword matches** and categorical filtering.
+> **Confirmed Remediation Decisions (from Phase 1 Clarifications)**:
+> 1. **OrcaSlicer Flathub ID Migration**:
+>    - Migrate the primary Flatpak identifier from `com.softfever.OrcaSlicer` to `com.orcaslicer.OrcaSlicer` (matching Flathub's upstream namespace transition).
+>    - Add dynamic fallback logic: if `com.orcaslicer.OrcaSlicer` fails or is not found in an outdated cache, attempt `com.softfever.OrcaSlicer`.
+> 2. **DNF Automatic Configuration & DNF5 Compatibility**:
+>    - Eliminate the brittle assumption that `/etc/dnf/automatic.conf` exists prior to `sed` invocation.
+>    - If `/etc/dnf/automatic.conf` does not exist (or in modern Fedora 41 DNF5 environments where `dnf-automatic` has been transitioned), automatically generate the required configuration directory (`/etc/dnf`) and write an idempotent, secure baseline:
+>      ```ini
+>      [commands]
+>      upgrade_type = security
+>      download_updates = yes
+>      apply_updates = yes
+>      [emitters]
+>      emit_via = stdio
+>      ```
+>    - Add dual service activation supporting both `dnf-automatic.timer` and modern `dnf5-automatic.timer`.
+>    - In download-only mode (`-d`), guard against modifying filesystem service configurations.
+> 3. **Version Bump Alignment (`v2.0.1`)**:
+>    - Bump version from `2.0` to `2.0.1` across `Linux-Deployment-Tool.sh`, `scriptsData.ts`, `repoScripts.json`, `public/raw/Linux-Deployment-Tool.sh`, `Navbar.tsx`, `SupportModal.tsx`, and `App.tsx`.
 
 ---
 
-### 1. Overview & Core Concept
+### 1. Overview & Root Cause Analysis
 
-- **What It Does**: Provides a dedicated, high-speed client-side search engine within `ScriptInspector`. As users type keywords (e.g., `"harden"`, `"2fa"`, `"cve"`, `"gaming"`, `"ssh"`, `"auditd"`, `"backup"`, `"restic"`), the index immediately filters and displays matching flags, security modules, and architectural features, highlighting the query substring in context.
-- **Target Audience / Persona**: System administrators and security engineers who need to quickly locate the exact CLI syntax, safety prerequisites, elevated privileges, and package dependencies for a specific deployment flag or hardening control.
-- **Key Value**: Eliminates manual scanning through hundreds of lines of documentation or code comments, providing single-click simulation runs and copy actions directly from matched results.
-
----
-
-### 2. User Experience & Visual Design
-
-#### Key User Flows
-1. **Keyword Filtering Flow**:
-   - The user navigates to the **Script Inspector** tab.
-   - An expanded search toolbar appears above the Documentation and Flags views.
-   - The user enters a search term (e.g., `harden`).
-   - The index immediately surfaces matching items:
-     - Flag `--harden` (Safe Baseline Hardening)
-     - Flag `--harden-advanced` (Strict Zero-Trust Posture & auditd rules)
-     - Documentation sections covering CIS Level 2 sysctl hardening and audit rules.
-   - The search query substring is highlighted with a clean, high-contrast cyan background (`bg-cyan-500/20 text-cyan-200 rounded px-0.5`).
-2. **Catalog-Wide Exploration Flow**:
-   - The user toggles the scope switch from `"Active Script"` to `"All Catalog Scripts"`.
-   - Results show matching flags and modules from `Windows-Deployment-Tool.ps1`, `Restic-Cloud-Backup.sh`, `SteamOS-Deck-Optimizer.sh`, and `Linux-Deployment-Tool.sh`.
-   - Clicking a result from another script instantly switches the active inspector script and jumps directly to that flag or module.
-3. **Action Integration**:
-   - Each search result card includes direct action buttons:
-     - **Copy Flag** (e.g., `navigator.clipboard.writeText('--harden-advanced')`)
-     - **Run in Simulator** (transfers script and selected flag directly into `TerminalSimulator`)
-     - **Inspect in Source** (switches to Code view and scrolls/highlights matching line)
-
-#### Visual Identity & Theme
-- **Search Bar**: Sleek input with left search icon, right clear `(✕)` button, active result count badge (e.g., `3 matches`), and scope toggle pill.
-- **Color Distribution**:
-  - Search container: Dark slate surface (`bg-slate-900 border border-slate-800`).
-  - Active highlights: Crisp cyan (`bg-cyan-500/20 text-cyan-300`).
-  - Security badges: Ruby/Rose for elevated/strict security (`bg-rose-950/60 text-rose-300 border-rose-800`).
-- **Typography**: Tabular figures for line numbers and match counts (`font-mono tabular-nums`). Clean display sans for descriptions.
+- **Defect 1: OrcaSlicer Flatpak Not Found**:
+  - *Root Cause*: Flathub migrated the official application manifest from `com.softfever.OrcaSlicer` to `com.orcaslicer.OrcaSlicer`. Running `flatpak install flathub com.softfever.OrcaSlicer` returns an exit error: `error: Nothing matches com.softfever.OrcaSlicer in remote flathub`.
+  - *Fix*: Update array in `Linux-Deployment-Tool.sh` to use `com.orcaslicer.OrcaSlicer` and enhance `install_flatpak_app()` with an automatic fallback mechanism.
+- **Defect 2: `sed: can't read /etc/dnf/automatic.conf` Fatal Exit**:
+  - *Root Cause*: Line 1139 executed `sed -i -E ... /etc/dnf/automatic.conf` immediately after `pkg_install dnf-automatic`. On minimal containers, fresh Fedora 41 installations using DNF5, or dry-run execution (`-d`), `/etc/dnf/automatic.conf` does not exist on disk. Under `set -e`, `sed` fails with exit code 2, causing premature abort of the entire deployment.
+  - *Fix*: Verify file presence before calling `sed`. If absent, create `/etc/dnf` and write a pristine configuration block with `upgrade_type = security`. Add fallback activation for `dnf5-automatic.timer`.
 
 ---
 
-### 3. Key Product Decisions & Trade-Offs
+### 2. Implementation Specifications
 
-- **Decision 1: Client-Side Pre-Indexed Data Model (`useMemo`)**
-  - *Chosen Approach*: Index the structured `SCRIPT_CATALOG` metadata (`flags`, `keyFeatures`, `description`, `supportedDistrosOrEditions`) and combine it with script comment headers in memory using a reactive `useMemo` search index.
-  - *Why*: Sub-millisecond response time with zero network overhead, zero latency, and seamless offline functionality.
-  - *Alternatives Considered*: Server-side search API (unnecessary latency and failure modes for static catalog data).
+#### A. `Linux-Deployment-Tool.sh` Script Patches
+1. **Header Changelog Update**:
+   - Add `v2.0.1:` section under `DEFECT RESOLUTIONS & BUG FIXES`:
+     - *OrcaSlicer Flathub ID*: Migrated to `com.orcaslicer.OrcaSlicer` with legacy `com.softfever.OrcaSlicer` fallback.
+     - *DNF Automatic Auto-Creation*: Added automated template creation for `/etc/dnf/automatic.conf` and added support for DNF5 `dnf5-automatic.timer`.
+2. **Maker Flatpak Array**:
+   ```bash
+   readonly MAKER_FLATPAKS=(com.orcaslicer.OrcaSlicer com.bambulab.BambuStudio)
+   ```
+3. **Enhanced Flatpak Installer Fallback**:
+   In `install_flatpak_app()`: if `com.orcaslicer.OrcaSlicer` fails, retry with `com.softfever.OrcaSlicer` before warning.
+4. **Resilient DNF Automatic Setup**:
+   ```bash
+   if [[ "$DISTRO_FAMILY" == "rpm" ]]; then
+       if [[ -n "$DOWNLOAD_ONLY" ]]; then
+           log_info "Download-only mode active: staged dnf-automatic packages."
+       else
+           pkg_install dnf-automatic || pkg_install dnf5-plugin-automatic || true
+           local dnf_auto_conf="/etc/dnf/automatic.conf"
+           mkdir -p /etc/dnf
+           if [[ ! -f "$dnf_auto_conf" ]]; then
+               log_info "Creating default security configuration: $dnf_auto_conf"
+               cat <<'EOF' > "$dnf_auto_conf"
+[commands]
+upgrade_type = security
+download_updates = yes
+apply_updates = yes
+[emitters]
+emit_via = stdio
+EOF
+           else
+               sed -i -E 's/^#?upgrade_type =.*/upgrade_type = security/' "$dnf_auto_conf" 2>/dev/null || echo "upgrade_type = security" >> "$dnf_auto_conf"
+               sed -i -E 's/^#?download_updates =.*/download_updates = yes/' "$dnf_auto_conf" 2>/dev/null || echo "download_updates = yes" >> "$dnf_auto_conf"
+               sed -i -E 's/^#?apply_updates =.*/apply_updates = yes/' "$dnf_auto_conf" 2>/dev/null || echo "apply_updates = yes" >> "$dnf_auto_conf"
+           fi
+           service_enable dnf-automatic.timer || service_enable dnf5-automatic.timer || true
+       fi
+   ```
 
-- **Decision 2: Substring Highlighting Component (`<HighlightMatch />`)**
-  - *Chosen Approach*: Build a lightweight regex/split renderer that wraps matched text segments in `<mark className="bg-cyan-500/30 text-cyan-200 rounded px-0.5 font-semibold">`.
-  - *Why*: Guarantees instant visual feedback so users immediately see why a card matched their query.
-
-- **Decision 3: Seamless Integration with Existing Subtabs**
-  - *Chosen Approach*: When a search query is typed, the interface offers an unified "Search Results" view displaying all matched flags, security modules, and doc snippets, while also filtering the existing "Flags" and "Docs" tabs. Clearing the search restores the standard tab view.
-  - *Why*: Provides the best of both worlds: dedicated search result scanning without losing standard tab browsing workflows.
+#### B. Web Studio Parity & Version Bump
+- Update version badge from `v2.0` to `v2.0.1` in `Navbar.tsx`, `SupportModal.tsx`, `App.tsx`, and `scriptsData.ts`.
+- Update `scriptsData.ts` and `ScriptInspector.tsx` search index to reference `com.orcaslicer.OrcaSlicer` and DNF5 automatic timer hardening.
+- Sync `/public/raw/Linux-Deployment-Tool.sh` and `src/data/repoScripts.json`.
 
 ---
 
-### 4. Technical Architecture & Component Hierarchy
+### 3. Technical Architecture & Component Flow
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                          ScriptInspector.tsx                           │
+│                        Linux-Deployment-Tool.sh                        │
 ├────────────────────────────────────────────────────────────────────────┤
-│  State:                                                                │
-│    - searchQuery: string                                               │
-│    - searchScope: 'active' | 'all'                                     │
-│    - categoryFilter: 'all' | 'security' | 'core' | 'apps' | 'modifier'  │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                 ┌──────────────────┴──────────────────┐
-                 ▼                                     ▼
-┌─────────────────────────────────┐   ┌──────────────────────────────────┐
-│        Search Toolbar           │   │      Search Index Engine         │
-│ - Keyword text input with clear │   │ - Indexed Flags & Aliases        │
-│ - Scope toggle (Active vs All)  │   │ - Security & Hardening Modules   │
-│ - Category filter buttons       │   │ - Key Features & Tech Overview   │
-│ - Match count pill              │   │ - Fuzzy/Exact substring matcher  │
-└────────────────┬────────────────┘   └────────────────┬─────────────────┘
-                 │                                     │
-                 └──────────────────┬──────────────────┘
-                                    ▼
-       ┌────────────────────────────────────────────────────────┐
-       │             Rendered Matched Results View              │
-       │  - <HighlightMatch text={...} query={searchQuery} />   │
-       │  - Matched Flag Cards with category & elevation badges │
-       │  - Matched Security Controls & Warning Notes           │
-       │  - Matched Key Engineering Features                    │
-       │  - Action Buttons: Copy Flag, Run Simulator, Jump Code │
-       └────────────────────────────────────────────────────────┘
-```
-
-#### Data Model for Search Index Item
-```typescript
-interface SearchIndexEntry {
-  type: 'flag' | 'security' | 'feature' | 'overview';
-  scriptId: string;
-  scriptName: string;
-  title: string;
-  description: string;
-  category?: string;
-  flagSyntax?: string;
-  warningNote?: string;
-  associatedSoftware?: string[];
-  requiresElevation?: boolean;
-}
+│ 1. Flathub Package Resolver                                            │
+│    Primary:   com.orcaslicer.OrcaSlicer ──► [Success]                  │
+│    Fallback:  com.softfever.OrcaSlicer  ──► [Legacy Support]           │
+├────────────────────────────────────────────────────────────────────────┤
+│ 2. DNF Automated Patching Engine                                       │
+│    Check:     /etc/dnf/automatic.conf exists?                          │
+│    Yes ────►  Safely mutate with sed (upgrade_type = security)         │
+│    No  ────►  Generate clean template configuration block              │
+│    Timer:     Enable dnf-automatic.timer || dnf5-automatic.timer       │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 5. Verification Plan
+### 4. Verification Plan
 
-1. **Active Script Flag Search**:
-   - Type `--harden` -> Verify `--harden` and `--harden-advanced` appear with matched keywords highlighted.
-   - Type `cve` -> Verify OpenSSH CVE-2024-6387 mitigation and security hardening features appear.
-2. **Catalog-Wide Scope Toggle**:
-   - Toggle to "All Catalog Scripts".
-   - Type `restic` -> Verify `Restic-Cloud-Backup.sh` flags and modules appear.
-   - Type `registry` -> Verify `Windows-Deployment-Tool.ps1` modules appear.
-3. **Interactive Actions**:
-   - Click "Copy Flag" -> Verify flag string copied to clipboard with visual confirmation.
-   - Click "Run in Simulator" -> Verify Simulator tab opens with the selected script and command.
-4. **Code Quality & Build Verification**:
-   - Run `compile_applet` to ensure error-free TypeScript build.
-   - Run `lint_applet` to ensure zero ESLint issues.
+1. **Bash Syntax Integrity**:
+   - Execute `bash -n Linux/Provisioning/Linux-Deployment-Tool/Linux-Deployment-Tool.sh` to guarantee zero syntax or quoting errors.
+2. **Defect Verification**:
+   - Verify `com.orcaslicer.OrcaSlicer` is specified in `MAKER_FLATPAKS` and `scriptsData.ts`.
+   - Verify `/etc/dnf/automatic.conf` file existence check and `mkdir -p /etc/dnf` creation prevent `sed` failures.
+3. **Application Build & Lint**:
+   - Run `compile_applet` and `lint_applet` to confirm clean compilation across the React applet.
+4. **Public Raw Sync**:
+   - Confirm `/public/raw/Linux-Deployment-Tool.sh` matches the updated script content byte-for-byte.

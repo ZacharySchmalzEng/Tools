@@ -12,7 +12,7 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     category: 'Provisioning',
     language: 'bash',
     description: 'Production-ready, modular flag-based deployment tool for fresh Linux installations. Features multi-distro special handling (Atomic, SteamOS, Arch, openSUSE), Nobara GPU protection, and tiered security hardening.',
-    version: '1.3',
+    version: '2.0.1',
     author: 'Zachary Schmalz (github.com/ZacharySchmalzEng/Tools)',
     requiresElevation: true,
     supportedDistrosOrEditions: [

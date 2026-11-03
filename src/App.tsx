@@ -99,7 +99,7 @@ export const App: React.FC = () => {
                   ZacharySchmalz<span className="text-cyan-400">/Tools</span>
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-mono">
-                  v2.0
+                  v2.0.1
                 </span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
@@ -108,7 +108,7 @@ export const App: React.FC = () => {
                 and Windows 11 Pro.
               </p>
               <div className="text-xs text-slate-500 font-mono">
-                Licensed under the MIT License • Production Release v2.0
+                Licensed under the MIT License • Production Hotfix Release v2.0.1
               </div>
             </div>
 
@@ -188,7 +188,7 @@ export const App: React.FC = () => {
           {/* Bottom Hairline & Copyright */}
           <div className="mt-8 pt-6 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
             <div>
-              © {new Date().getFullYear()} Zachary Schmalz Engineering • Production Release v2.0
+              © {new Date().getFullYear()} Zachary Schmalz Engineering • Production Hotfix Release v2.0.1
             </div>
             <div className="flex items-center space-x-4">
               <a

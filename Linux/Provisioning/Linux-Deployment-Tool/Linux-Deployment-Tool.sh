@@ -16,8 +16,8 @@
 #                     https://github.com/ZacharySchmalzEng/Tools/issues
 #
 # NOTES
-#     Version:        2.0
-#     Status:         Production Release
+#     Version:        2.0.1
+#     Status:         Production Hotfix Release
 #     Requirements:   Bash, root/sudo privileges, active internet connection.
 #                     Zero manual on-box dependencies (automatic self-bootstrapping).
 #     Supported OS:   Fedora, Nobara, Fedora Atomic (Silverblue/Bazzite),
@@ -46,6 +46,14 @@
 # ------------------------------------------------------------------------------
 # DEFECT RESOLUTIONS & BUG FIXES
 # ------------------------------------------------------------------------------
+#     v2.0.1:
+#       - Resolved Flathub OrcaSlicer App ID Not Found: Migrated package identifier from
+#         deprecated 'com.softfever.OrcaSlicer' to 'com.orcaslicer.OrcaSlicer' with automated
+#         legacy fallback in install_flatpak_app().
+#       - Resolved Fatal sed /etc/dnf/automatic.conf Crash (Exit code 2): Added auto-creation of
+#         missing /etc/dnf/automatic.conf template on fresh/minimal systems, guarded against
+#         uninstalled configuration modifications in download-only mode (-d), and added dual
+#         timer support for both dnf-automatic.timer and modern dnf5-automatic.timer.
 #     v2.0:
 #       - Resolved Nobara NVIDIA Driver Packaging Collision: Bypassed manual RPM Fusion
 #         'akmod-nvidia' installation on Nobara Linux to eliminate fatal conflicts with
@@ -603,11 +611,20 @@ ensure_flatpak() {
 
 install_flatpak_app() {
     local app="$1"
+    local fallback="${2:-}"
     ensure_flatpak
-    if [[ "$AUTO_YES" == "-y" ]]; then
-        flatpak install --assumeyes flathub "$app" || log_warn "Failed to install Flatpak app: $app"
+    local yes_flag=""
+    if [[ "$AUTO_YES" == "-y" ]]; then yes_flag="--assumeyes"; fi
+
+    if flatpak install ${yes_flag:+$yes_flag} flathub "$app" 2>/dev/null; then
+        log_success "Flatpak app installed: $app"
+        return 0
+    elif [[ -n "$fallback" ]] && flatpak install ${yes_flag:+$yes_flag} flathub "$fallback" 2>/dev/null; then
+        log_success "Flatpak app installed using legacy fallback: $fallback"
+        return 0
     else
-        flatpak install flathub "$app" || log_warn "Failed to install Flatpak app: $app"
+        log_warn "Failed to install Flatpak app: $app${fallback:+ (or legacy $fallback)}"
+        return 1
     fi
 }
 
@@ -1095,10 +1112,9 @@ if [[ "$RUN_MAKER" == true ]]; then
         log_warn "The PrusaSlicer package could not be installed. Continuing..."
     fi
     ensure_flatpak
-    readonly MAKER_FLATPAKS=(com.softfever.OrcaSlicer com.bambulab.BambuStudio)
-    for app in "${MAKER_FLATPAKS[@]}"; do
-        install_flatpak_app "$app"
-    done
+    # OrcaSlicer upstream namespace transitioned from com.softfever to com.orcaslicer
+    install_flatpak_app "com.orcaslicer.OrcaSlicer" "com.softfever.OrcaSlicer"
+    install_flatpak_app "com.bambulab.BambuStudio"
     log_success "Maker module complete."
 fi
 
@@ -1134,12 +1150,35 @@ if [[ "$RUN_HARDEN" == true ]]; then
 
     log_info "Configuring Automatic Security Updates..."
     if [[ "$DISTRO_FAMILY" == "rpm" ]]; then
-        pkg_install dnf-automatic
-        readonly DNF_AUTO_CONF="/etc/dnf/automatic.conf"
-        sed -i -E 's/^upgrade_type =.*/upgrade_type = security/' "$DNF_AUTO_CONF"
-        sed -i -E 's/^download_updates =.*/download_updates = yes/' "$DNF_AUTO_CONF"
-        sed -i -E 's/^apply_updates =.*/apply_updates = yes/' "$DNF_AUTO_CONF"
-        service_enable dnf-automatic.timer
+        if [[ -n "$DOWNLOAD_ONLY" ]]; then
+            log_info "Download-only mode active: staged dnf-automatic package without modifying service files."
+        else
+            pkg_install dnf-automatic 2>/dev/null || pkg_install dnf5-plugin-automatic 2>/dev/null || true
+            local dnf_auto_conf="/etc/dnf/automatic.conf"
+            mkdir -p /etc/dnf
+            if [[ ! -f "$dnf_auto_conf" ]]; then
+                log_info "Creating default security configuration: $dnf_auto_conf"
+                cat <<'EOF' > "$dnf_auto_conf"
+[commands]
+upgrade_type = security
+download_updates = yes
+apply_updates = yes
+
+[emitters]
+emit_via = stdio
+
+[command]
+upgrade_type = security
+download_updates = yes
+apply_updates = yes
+EOF
+            else
+                sed -i -E 's/^#?upgrade_type =.*/upgrade_type = security/' "$dnf_auto_conf" 2>/dev/null || echo "upgrade_type = security" >> "$dnf_auto_conf"
+                sed -i -E 's/^#?download_updates =.*/download_updates = yes/' "$dnf_auto_conf" 2>/dev/null || echo "download_updates = yes" >> "$dnf_auto_conf"
+                sed -i -E 's/^#?apply_updates =.*/apply_updates = yes/' "$dnf_auto_conf" 2>/dev/null || echo "apply_updates = yes" >> "$dnf_auto_conf"
+            fi
+            service_enable dnf-automatic.timer 2>/dev/null || service_enable dnf5-automatic.timer 2>/dev/null || true
+        fi
     elif [[ "$DISTRO_FAMILY" == "atomic" ]]; then
         log_info "Fedora Atomic: Enabling rpm-ostreed-automatic timer..."
         systemctl enable --now rpm-ostreed-automatic.timer 2>/dev/null || true

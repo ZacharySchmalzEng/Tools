@@ -43,7 +43,7 @@ export const SupportModal: React.FC<SupportModalProps> = ({
 
   const diagnosticsMarkdown = `### Environment Diagnostics
 - **Repository**: ZacharySchmalzEng/Tools
-- **Tool Suite Version**: 2.0 (Production Release)
+- **Tool Suite Version**: 2.0.1 (Production Hotfix Release)
 - **Active Workspace Tab**: \`${activeTab}\`
 - **Referenced Script**: \`${activeScriptId}\`
 - **Client User Agent**: \`${typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown'}\`
@@ -72,7 +72,7 @@ export const SupportModal: React.FC<SupportModalProps> = ({
               <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
                 GitHub Support & Community Feedback
                 <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-mono">
-                  v2.0
+                  v2.0.1
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
