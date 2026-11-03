@@ -47,9 +47,9 @@ export interface WindowsDeploymentConfig {
 
 export interface LinuxDeploymentConfig {
   preset: 'baseline' | 'strict' | 'gaming' | 'developer' | 'custom';
-  distro: 'rpm' | 'nobara' | 'deb';
+  distro: 'rpm' | 'nobara' | 'atomic' | 'arch' | 'steamos' | 'opensuse' | 'deb';
   gpu: 'nvidia' | 'amd' | 'none';
-  desktopEnv: 'kde' | 'gnome';
+  desktopEnv: 'kde' | 'gnome' | 'cosmic' | 'xfce' | 'cinnamon';
   all: boolean;
   update: boolean;
   apps: boolean;

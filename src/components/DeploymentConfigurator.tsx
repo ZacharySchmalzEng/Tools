@@ -264,6 +264,21 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
       if (linuxConfig.discord) flags.push('--discord');
     }
 
+    // Distro Manual Target (Auto-detected if standard)
+    if (linuxConfig.distro === 'nobara') flags.push('--distro=nobara');
+    else if (linuxConfig.distro === 'atomic') flags.push('--atomic');
+    else if (linuxConfig.distro === 'arch') flags.push('--arch');
+    else if (linuxConfig.distro === 'steamos') flags.push('--steamos');
+    else if (linuxConfig.distro === 'opensuse') flags.push('--opensuse');
+    else if (linuxConfig.distro === 'deb') flags.push('--distro=deb');
+
+    // Desktop Environment Target
+    if (linuxConfig.desktopEnv === 'cosmic') flags.push('--cosmic');
+    else if (linuxConfig.desktopEnv === 'xfce') flags.push('--xfce');
+    else if (linuxConfig.desktopEnv === 'cinnamon') flags.push('--cinnamon');
+    else if (linuxConfig.desktopEnv === 'gnome') flags.push('--gnome');
+    else if (linuxConfig.desktopEnv === 'kde') flags.push('--kde');
+
     // Security
     if (linuxConfig.hardenAdvanced) {
       flags.push('--harden-advanced');
@@ -661,11 +676,14 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                 <span>Environment Target & Hardware Auto-Selection</span>
               </span>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-3">
                 {/* Distro Family */}
                 <div className="space-y-1.5">
-                  <label className="text-[11px] text-slate-400 font-medium">Distro Family (Auto-Detected)</label>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] text-slate-400 font-medium">Distro Family Engine (Auto-Detected by Default)</label>
+                    <span className="text-[10px] text-emerald-400 font-mono">v2.0 Multi-Distro Engine</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5">
                     <button
                       onClick={() => setLinuxConfig(prev => ({ ...prev, distro: 'rpm' }))}
                       className={`p-2 rounded-lg text-[11px] font-medium border text-center transition-all ${
@@ -684,7 +702,47 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
-                      Nobara / Nobaru
+                      Nobara
+                    </button>
+                    <button
+                      onClick={() => setLinuxConfig(prev => ({ ...prev, distro: 'atomic' }))}
+                      className={`p-2 rounded-lg text-[11px] font-medium border text-center transition-all ${
+                        linuxConfig.distro === 'atomic'
+                          ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 font-semibold ring-1 ring-indigo-500/50'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      Atomic / Bazzite
+                    </button>
+                    <button
+                      onClick={() => setLinuxConfig(prev => ({ ...prev, distro: 'arch' }))}
+                      className={`p-2 rounded-lg text-[11px] font-medium border text-center transition-all ${
+                        linuxConfig.distro === 'arch'
+                          ? 'bg-cyan-600/20 border-cyan-500 text-cyan-300 font-semibold ring-1 ring-cyan-500/50'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      Arch Linux
+                    </button>
+                    <button
+                      onClick={() => setLinuxConfig(prev => ({ ...prev, distro: 'steamos' }))}
+                      className={`p-2 rounded-lg text-[11px] font-medium border text-center transition-all ${
+                        linuxConfig.distro === 'steamos'
+                          ? 'bg-amber-600/20 border-amber-500 text-amber-300 font-semibold ring-1 ring-amber-500/50'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      SteamOS
+                    </button>
+                    <button
+                      onClick={() => setLinuxConfig(prev => ({ ...prev, distro: 'opensuse' }))}
+                      className={`p-2 rounded-lg text-[11px] font-medium border text-center transition-all ${
+                        linuxConfig.distro === 'opensuse'
+                          ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-semibold ring-1 ring-emerald-500/50'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      openSUSE
                     </button>
                     <button
                       onClick={() => setLinuxConfig(prev => ({ ...prev, distro: 'deb' }))}
@@ -697,12 +755,36 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                       Debian / Ubuntu
                     </button>
                   </div>
+
+                  {/* Contextual Distribution Safeguard Notices */}
                   {linuxConfig.distro === 'nobara' && (
-                    <div className="text-[10px] text-purple-300 bg-purple-950/40 border border-purple-800/60 rounded px-2 py-1 mt-1">
-                      🎮 <strong>Nobara / Nobaru detected:</strong> Native gaming kernel tweaks & pre-installed RPM Fusion repos are utilized.
+                    <div className="text-[11px] text-purple-300 bg-purple-950/40 border border-purple-800/60 rounded px-2.5 py-1.5">
+                      🎮 <strong>Nobara Safeguard Active:</strong> Uses pre-packaged <code>dkms-nvidia</code> from <code>nobara-nvidia-production</code>. Conflicting RPM Fusion <code>akmod-nvidia</code> is safely skipped.
+                    </div>
+                  )}
+                  {linuxConfig.distro === 'atomic' && (
+                    <div className="text-[11px] text-indigo-300 bg-indigo-950/40 border border-indigo-800/60 rounded px-2.5 py-1.5">
+                      📦 <strong>Fedora Atomic / Bazzite Engine:</strong> Employs <code>rpm-ostree install --idempotent</code> with Flatpak-first containment and scheduled reboot notifications.
+                    </div>
+                  )}
+                  {linuxConfig.distro === 'steamos' && (
+                    <div className="text-[11px] text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded px-2.5 py-1.5">
+                      🕹️ <strong>SteamOS Lifecycle Engine:</strong> Unlocks root with <code>steamos-readonly disable</code>, initializes pacman keys, and guarantees re-locking via signal traps.
+                    </div>
+                  )}
+                  {linuxConfig.distro === 'opensuse' && (
+                    <div className="text-[11px] text-emerald-300 bg-emerald-950/40 border border-emerald-800/60 rounded px-2.5 py-1.5">
+                      🦎 <strong>openSUSE Engine:</strong> Manages packages via <code>zypper</code>, wires Packman Essentials repository, and enforces AppArmor profile parity.
+                    </div>
+                  )}
+                  {linuxConfig.distro === 'arch' && (
+                    <div className="text-[11px] text-cyan-300 bg-cyan-950/40 border border-cyan-800/60 rounded px-2.5 py-1.5">
+                      🏹 <strong>Arch Linux Engine:</strong> Utilizes <code>pacman -S --needed</code> with multilib repository verification for 32-bit gaming runtimes.
                     </div>
                   )}
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
 
                 {/* GPU Stack */}
                 <div className="space-y-1.5">
@@ -732,33 +814,67 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                 </div>
 
                 {/* Desktop Environment */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] text-slate-400 font-medium">Desktop Environment</label>
-                  <div className="grid grid-cols-2 gap-1.5">
+                <div className="space-y-1.5 sm:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] text-slate-400 font-medium">Desktop Environment Profile</label>
+                    <span className="text-[10px] text-cyan-400 font-mono">QoL Tools & Tailored Config</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                     <button
                       onClick={() => setLinuxConfig(prev => ({ ...prev, desktopEnv: 'kde' }))}
                       className={`p-2 rounded-lg text-xs font-medium border text-center transition-all ${
                         linuxConfig.desktopEnv === 'kde'
-                          ? 'bg-cyan-600/20 border-cyan-500 text-cyan-300 font-semibold'
+                          ? 'bg-cyan-600/20 border-cyan-500 text-cyan-300 font-semibold ring-1 ring-cyan-500/50'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
-                      KDE Plasma (filelight)
+                      KDE Plasma
                     </button>
                     <button
                       onClick={() => setLinuxConfig(prev => ({ ...prev, desktopEnv: 'gnome' }))}
                       className={`p-2 rounded-lg text-xs font-medium border text-center transition-all ${
                         linuxConfig.desktopEnv === 'gnome'
-                          ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 font-semibold'
+                          ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 font-semibold ring-1 ring-indigo-500/50'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
-                      GNOME (baobab)
+                      GNOME
+                    </button>
+                    <button
+                      onClick={() => setLinuxConfig(prev => ({ ...prev, desktopEnv: 'cosmic' }))}
+                      className={`p-2 rounded-lg text-xs font-medium border text-center transition-all ${
+                        linuxConfig.desktopEnv === 'cosmic'
+                          ? 'bg-purple-600/20 border-purple-500 text-purple-300 font-semibold ring-1 ring-purple-500/50'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      COSMIC (Rust)
+                    </button>
+                    <button
+                      onClick={() => setLinuxConfig(prev => ({ ...prev, desktopEnv: 'xfce' }))}
+                      className={`p-2 rounded-lg text-xs font-medium border text-center transition-all ${
+                        linuxConfig.desktopEnv === 'xfce'
+                          ? 'bg-amber-600/20 border-amber-500 text-amber-300 font-semibold ring-1 ring-amber-500/50'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      XFCE
+                    </button>
+                    <button
+                      onClick={() => setLinuxConfig(prev => ({ ...prev, desktopEnv: 'cinnamon' }))}
+                      className={`p-2 rounded-lg text-xs font-medium border text-center transition-all ${
+                        linuxConfig.desktopEnv === 'cinnamon'
+                          ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 font-semibold ring-1 ring-emerald-500/50'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      Cinnamon
                     </button>
                   </div>
                 </div>
               </div>
             </div>
+          </div>
 
             {/* Presets */}
             <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
@@ -831,8 +947,11 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                     }}
                     className="mr-2 rounded bg-slate-900 border-slate-700 text-emerald-600"
                   />
-                  <span className="font-mono text-xs font-semibold text-emerald-400">--harden</span>
-                  <p className="text-[11px] text-slate-400 mt-1">Safe Baseline: SELinux verification, unattended security patching, disables root SSH login.</p>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-semibold text-emerald-400">--harden</span>
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono">CVE-2024-6387</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">Safe Baseline: SELinux/AppArmor verification, OpenSSH regreSSHion mitigation (LoginGraceTime 20s), and disables direct root SSH login.</p>
                 </label>
 
                 <label className={`p-3 rounded-lg border cursor-pointer transition-all ${
@@ -853,8 +972,11 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                     }}
                     className="mr-2 rounded bg-slate-900 border-slate-700 text-rose-600"
                   />
-                  <span className="font-mono text-xs font-semibold text-rose-400">--harden-advanced</span>
-                  <p className="text-[11px] text-slate-400 mt-1">Strict Posture: Deploys auditd credential monitors, drops ICMP pings, disables SSH passwords.</p>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-semibold text-rose-400">--harden-advanced</span>
+                    <span className="text-[10px] bg-rose-500/10 text-rose-300 border border-rose-500/20 px-1.5 py-0.5 rounded font-mono">CIS Level 2</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">Strict SecOps Posture: High-fidelity auditd rules, kernel sysctl drops (martians, redirects, suid_dumpable = 0), and disables SSH passwords.</p>
                 </label>
 
                 <label className={`p-3 rounded-lg border cursor-pointer transition-all ${
@@ -875,8 +997,11 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                     }}
                     className="mr-2 rounded bg-slate-900 border-slate-700 text-cyan-600"
                   />
-                  <span className="font-mono text-xs font-semibold text-cyan-400">--2fa</span>
-                  <p className="text-[11px] text-slate-400 mt-1">MFA SSH: Enforces Google Authenticator PAM module for multi-factor terminal logins.</p>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-semibold text-cyan-400">--2fa</span>
+                    <span className="text-[10px] bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 px-1.5 py-0.5 rounded font-mono">PAM MFA nullok</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">MFA SSH: Enforces Google Authenticator PAM with transitional safe-staging to prevent admin lockout prior to OTP token generation.</p>
                 </label>
               </div>
             </div>

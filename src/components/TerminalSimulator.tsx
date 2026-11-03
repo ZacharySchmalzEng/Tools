@@ -73,22 +73,71 @@ export const TerminalSimulator: React.FC<TerminalSimulatorProps> = ({
       const isDryRun = cmd.includes('-d');
 
       const isNobara = cmd.toLowerCase().includes('nobara') || cmd.toLowerCase().includes('nobaru');
+      const isSteamOS = cmd.includes('--steamos') || cmd.includes('steamos');
+      const isBazzite = cmd.includes('--bazzite') || cmd.includes('--atomic');
+      const isArch = cmd.includes('--arch') || cmd.includes('arch');
+      const isOpenSUSE = cmd.includes('--opensuse') || cmd.includes('suse');
+
+      const isCosmic = cmd.includes('--cosmic') || cmd.includes('--de=cosmic');
+      const isXfce = cmd.includes('--xfce') || cmd.includes('--de=xfce');
+      const isCinnamon = cmd.includes('--cinnamon') || cmd.includes('--de=cinnamon');
+      const isGnome = cmd.includes('--gnome') || cmd.includes('--de=gnome');
+
+      let deName = 'KDE Plasma';
+      let deQoLText = '[Desktop QoL] Profile: KDE Plasma -> Deployed filelight analyzer.';
+      if (isCosmic) {
+        deName = 'COSMIC Desktop (System76 Rust Epoch)';
+        deQoLText = '[Desktop QoL] Profile: COSMIC -> Deployed cosmic-files, cosmic-term, and cosmic-edit utilities.';
+      } else if (isXfce) {
+        deName = 'XFCE';
+        deQoLText = '[Desktop QoL] Profile: XFCE -> Deployed xfce4-taskmanager and baobab.';
+      } else if (isCinnamon) {
+        deName = 'Cinnamon';
+        deQoLText = '[Desktop QoL] Profile: Cinnamon -> Deployed nemo and baobab.';
+      } else if (isGnome) {
+        deName = 'GNOME';
+        deQoLText = '[Desktop QoL] Profile: GNOME -> Deployed baobab and gnome-tweaks.';
+      }
+
+      let distroStr = 'Detected: Fedora Linux 41 (Workstation Edition x86_64), Linux 6.11.4';
+      let engineStr = 'Package manager selected: DNF5 (RPM family parity)';
+
+      if (isSteamOS) {
+        distroStr = 'Detected: SteamOS 3.6 Holo (Steam Deck), Linux 6.5.0-valve';
+        engineStr = 'Package engine: Pacman with steamos-readonly integrity lifecycle';
+      } else if (isBazzite) {
+        distroStr = 'Detected: Bazzite 41 (KDE Atomic x86_64), Linux 6.11.4-bazzite';
+        engineStr = 'Package engine: rpm-ostree container tree & Flathub containment';
+      } else if (isArch) {
+        distroStr = 'Detected: Arch Linux (Rolling Release x86_64), Linux 6.11.7-arch';
+        engineStr = 'Package engine: Pacman with [multilib] 32-bit gaming runtimes';
+      } else if (isOpenSUSE) {
+        distroStr = 'Detected: openSUSE Tumbleweed (Rolling Release), Linux 6.11.6';
+        engineStr = 'Package engine: Zypper with Packman Essentials & AppArmor';
+      } else if (isNobara) {
+        distroStr = 'Detected: Nobara Linux 41 (Gaming Edition x86_64), Linux 6.11.4-nobara';
+        engineStr = 'Nobara detected: Native gaming kernel tweaks & DKMS Nvidia drivers active.';
+      }
 
       const lines: { type: LogLine['type']; text: string }[] = [
         { type: 'cmd', text: cmd },
-        { type: 'header', text: '=== Linux Automated Deployment & Provisioning Tool v1.3 ===' },
-        { type: 'info', text: 'Initializing execution context with strict mode (set -euo pipefail)...' },
+        { type: 'header', text: '=== Linux Automated Deployment & Provisioning Tool v2.0 ===' },
+        { type: 'info', text: 'Initializing execution context with strict mode (set -euo pipefail, umask 077)...' },
+        { type: 'info', text: 'Registering signal recovery traps (SteamOS auto-relock & temp directory garbage collection)...' },
         { type: 'info', text: 'Validating root / superuser execution privileges...' },
         { type: 'success', text: 'Root authorization verified (EUID=0).' },
+        { type: 'info', text: 'Auto-bootstrapping base dependencies (curl, pciutils, ca-certificates, flatpak)...' },
+        { type: 'success', text: 'Zero on-box dependency check passed: Core utilities verified.' },
         { type: 'info', text: 'Detecting Linux distribution family and kernel release...' },
-        { type: 'success', text: isNobara ? 'Detected: Nobara Linux 41 (Nobaru Gaming Edition x86_64), Linux 6.11.4-nobara' : 'Detected: Fedora Linux 41 (Workstation Edition x86_64), Linux 6.11.4' },
-        { type: 'info', text: isNobara ? 'Nobara / Nobaru Linux detected. Leveraging native gaming tweaks and built-in repositories.' : 'Package manager selected: DNF5 (RPM family parity)' },
+        { type: 'success', text: distroStr },
+        { type: 'info', text: engineStr },
+        { type: 'info', text: `Configuring Desktop Environment target: ${deName}...` },
         { type: 'info', text: 'Auto-probing PCI hardware bus for GPU vendor...' },
         { type: 'success', text: 'Found GPU: NVIDIA GeForce RTX 4070 (vendor 10de: device 2786)' },
-        { type: 'info', text: 'Selecting NVIDIA driver stack: akmod-nvidia & CUDA tools' },
-        { type: 'info', text: 'Creating audit transcript: /var/log/InstallerLogs/Deploy_20261103_0637.log' },
-        { type: 'info', text: 'Refreshing DNF repository metadata and caching mirrors...' },
-        { type: 'success', text: 'Metadata cache synchronized: fedora, updates, rpmfusion-free, rpmfusion-nonfree' },
+        { type: 'info', text: isNobara ? 'Nobara detected: NVIDIA proprietary drivers pre-packaged via DKMS / nobara-nvidia-production. Skipping manual akmod-nvidia to prevent conflict.' : (isSteamOS ? 'SteamOS detected: Custom Valve Linux kernel targets AMD APU. Skipping NVIDIA desktop drivers.' : 'Selecting NVIDIA driver stack: akmod-nvidia & CUDA tools') },
+        { type: 'info', text: 'Creating audit transcript: /var/log/InstallerLogs/Deploy_20261103_0637.log (mode 0600)' },
+        { type: 'info', text: 'Refreshing package repository metadata...' },
+        { type: 'success', text: isSteamOS ? 'Synchronized SteamOS Pacman holo & archlinux keyrings.' : (isOpenSUSE ? 'Packman Essentials and openSUSE Tumbleweed repos refreshed.' : 'Repository metadata cache synchronized.') },
       ];
 
       if (isDryRun) {
@@ -99,6 +148,7 @@ export const TerminalSimulator: React.FC<TerminalSimulatorProps> = ({
         lines.push(
           { type: 'info', text: '[Apps Module] Resolving utility packages: btop, eza, plocate, p7zip, vlc, timeshift...' },
           { type: 'success', text: '[Apps Module] Downloaded & staged: btop (v1.4.0), eza (v0.20.1), plocate, vlc' },
+          { type: 'success', text: deQoLText },
           { type: 'info', text: '[Apps Module] Querying Flatpak remote flathub for: Obsidian, Signal Desktop, Brave...' },
           { type: 'success', text: '[Apps Module] Flatpak applications verified and staged.' }
         );

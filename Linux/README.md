@@ -7,7 +7,7 @@ Whether you are deploying a completely fresh Linux installation, configuring a d
 ## 📂 Directory Structure
 
 ### 🚀 Provisioning
-* **`Linux-Deployment-Tool.sh`** *(v1.3 Beta)*
+* **`Linux-Deployment-Tool.sh`** *(v2.0)*
   * **Purpose:** A highly modular, automated deployment tool for fresh Linux installations.
   * **Actions:** Uses command-line flags to selectively deploy application stacks (Apps, Dev, Cyber, Maker, Gaming), configure Desktop Environment QoL features, and apply tiered security hardening (including `auditd`, network sysctl drops, and MFA for SSH). It also adapts package management and driver selection to the detected distro family and GPU vendor.
 

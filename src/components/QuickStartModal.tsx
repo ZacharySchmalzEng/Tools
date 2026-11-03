@@ -34,7 +34,13 @@ export const QuickStartModal: React.FC<QuickStartModalProps> = ({ isOpen, onClos
       title: 'Linux: Universal Baseline with 2FA SSH',
       desc: 'Deploys full package stack, desktop environment QoL tools, and Google Authenticator MFA.',
       cmd: 'sudo ./Linux/Provisioning/Linux-Deployment-Tool/Linux-Deployment-Tool.sh --all --2fa --unattended',
-      os: 'Fedora / Debian'
+      os: 'Fedora / Nobara / Debian'
+    },
+    {
+      title: 'Linux: Direct Script Download via curl',
+      desc: 'Download the pristine raw script directly to your current directory without cloning git.',
+      cmd: `curl -fsSL "${window.location.origin}/raw/Linux-Deployment-Tool.sh" -o Linux-Deployment-Tool.sh\nchmod +x Linux-Deployment-Tool.sh\nsudo ./Linux-Deployment-Tool.sh --all -d`,
+      os: 'Linux'
     },
     {
       title: 'Linux: Safe Dry-Run Validation',

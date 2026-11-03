@@ -1,13 +1,14 @@
 import React from 'react';
-import { Terminal, Shield, Wrench, HardDrive, Cpu, RefreshCw, Code, ExternalLink, Copy, Check } from 'lucide-react';
+import { Terminal, Shield, Wrench, HardDrive, Cpu, RefreshCw, Code, ExternalLink, Copy, Check, HelpCircle } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenQuickStart: () => void;
+  onOpenSupport: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenQuickStart }) => {
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenQuickStart, onOpenSupport }) => {
   const [copiedClone, setCopiedClone] = React.useState(false);
 
   const copyCloneCommand = () => {
@@ -40,7 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenQ
                   ZacharySchmalz<span className="text-cyan-400">/Tools</span>
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-mono">
-                  v1.2 Beta
+                  v2.0
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">
@@ -66,6 +67,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenQ
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs shadow-md shadow-cyan-600/30 transition-colors"
             >
               <span>Quick Start</span>
+            </button>
+
+            <button
+              onClick={onOpenSupport}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 text-xs font-medium transition-colors"
+              title="GitHub Support & Community Feedback"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">Support</span>
             </button>
 
             <a
