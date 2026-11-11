@@ -1166,16 +1166,40 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                   <Play className="w-4 h-4" />
                   <span>Test in Terminal Simulator</span>
                 </button>
+
+                <a
+                  href="/raw/beta/Linux-Deployment-Tool-Beta.tar.gz"
+                  download="Linux-Deployment-Tool-Beta.tar.gz"
+                  className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 font-medium text-xs transition-all"
+                >
+                  <Download className="w-4 h-4 text-amber-400" />
+                  <span>Download ./Beta Tarball (.tar.gz)</span>
+                </a>
               </div>
 
               <div className="pt-3 border-t border-slate-800/80 space-y-2 text-xs text-slate-400">
-                <div className="flex items-center space-x-2 text-emerald-400">
-                  <Shield className="w-4 h-4 flex-shrink-0" />
-                  <span className="font-semibold text-[11px]">Strict Mode: set -euo pipefail</span>
+                <div className="flex items-center justify-between text-amber-400">
+                  <span className="font-semibold text-[11px]">v3.0-beta On-Demand Child Scripts</span>
+                  <span className="font-mono text-[10px] text-slate-500">branch: beta/modular-v3</span>
                 </div>
                 <p className="text-[11px] text-slate-400">
-                  Fails fast on any pipeline error to avoid leaving the system in an indeterminate state.
+                  Main runner at <code className="font-mono text-slate-200">./Beta/Linux-Deployment-Tool.sh</code> only downloads missing child modules for enabled flags:
                 </p>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 space-y-1">
+                  <div className="text-cyan-400">✓ lib/common.sh (Shared Core)</div>
+                  {(linuxConfig.all || linuxConfig.update) && <div>↳ modules/mod-update.sh</div>}
+                  {(linuxConfig.all || linuxConfig.apps) && <div>↳ modules/mod-apps.sh</div>}
+                  {(linuxConfig.all || linuxConfig.devapps) && <div>↳ modules/mod-devapps.sh</div>}
+                  {(linuxConfig.all || linuxConfig.sysadmin) && <div>↳ modules/mod-sysadmin.sh</div>}
+                  {(linuxConfig.all || linuxConfig.cyber) && <div>↳ modules/mod-cyber.sh</div>}
+                  {(linuxConfig.all || linuxConfig.maker) && <div>↳ modules/mod-maker.sh</div>}
+                  {(linuxConfig.all || linuxConfig.creators) && <div>↳ modules/mod-creators.sh</div>}
+                  {(linuxConfig.all || linuxConfig.harden) && !linuxConfig.hardenAdvanced && <div>↳ modules/mod-harden.sh</div>}
+                  {linuxConfig.hardenAdvanced && <div>↳ modules/mod-harden-adv.sh</div>}
+                  {(linuxConfig.all || linuxConfig.ssh) && <div>↳ modules/mod-ssh.sh</div>}
+                  {(linuxConfig.all || linuxConfig.discord) && <div>↳ modules/mod-discord.sh</div>}
+                  {(linuxConfig.all || linuxConfig.gaming) && <div>↳ modules/mod-gaming.sh</div>}
+                </div>
               </div>
             </div>
 
@@ -1183,30 +1207,36 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
             <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
               <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
                 <Info className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Distro-Aware Capabilities</span>
+                <span>Modular & Distro-Aware Capabilities</span>
               </h4>
 
               <ul className="space-y-2 text-xs text-slate-400">
                 <li className="flex items-start space-x-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
-                  <span><strong>Cross-Distro Parity:</strong> Supports Fedora, RHEL, CentOS, Rocky, Alma, Debian, Ubuntu, Mint, and Pop!_OS.</span>
+                  <span><strong>Top-of-Beta Runner:</strong> Extract <code className="font-mono text-slate-300">Linux-Deployment-Tool-Beta.tar.gz</code> or run <code className="font-mono text-slate-300">./Beta/Linux-Deployment-Tool.sh</code> directly.</span>
                 </li>
                 <li className="flex items-start space-x-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
-                  <span><strong>Driver Auto-Detection:</strong> Auto-probes PCI vendor IDs for NVIDIA vs AMD and sets up RPM Fusion or official repos.</span>
+                  <span><strong>Independent Child Modules:</strong> Every <code className="font-mono text-slate-300">./Beta/modules/mod-*.sh</code> script can also be executed standalone.</span>
                 </li>
                 <li className="flex items-start space-x-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
-                  <span><strong>Dry-Run Mode (-d):</strong> Download-only parameter enables resolving dependencies without mutating system state.</span>
+                  <span><strong>Separated Changelog:</strong> Full release history extracted to <code className="font-mono text-slate-300">CHANGELOG.md</code>.</span>
                 </li>
               </ul>
 
               <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
                 <button
+                  onClick={() => onViewScript('linux-deployment-tool-beta')}
+                  className="text-xs text-amber-400 hover:text-amber-300 underline font-mono"
+                >
+                  Inspect ./Beta Modular Runner →
+                </button>
+                <button
                   onClick={() => onViewScript('linux-deployment-tool')}
                   className="text-xs text-emerald-400 hover:text-emerald-300 underline font-mono"
                 >
-                  Inspect Full Source Code →
+                  v2.1 Stable →
                 </button>
               </div>
             </div>

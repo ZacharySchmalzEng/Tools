@@ -337,7 +337,19 @@ export const ScriptInspector: React.FC<ScriptInspectorProps> = ({
             </div>
 
             {/* Quick Actions */}
-            <div className="flex items-center space-x-2 flex-shrink-0">
+            <div className="flex items-center flex-wrap gap-2 flex-shrink-0">
+              {selectedItem.os === 'linux' && (
+                <a
+                  href="/raw/beta/Linux-Deployment-Tool-Beta.tar.gz"
+                  download="Linux-Deployment-Tool-Beta.tar.gz"
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-mono transition-colors border border-amber-500/30"
+                  title="Download complete ./Beta modular suite as a single tarball (Linux-Deployment-Tool.sh at top of ./Beta)"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-400" />
+                  <span>./Beta Tarball (.tar.gz)</span>
+                </a>
+              )}
+
               <button
                 onClick={handleCopyCurl}
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition-colors border border-slate-700"
