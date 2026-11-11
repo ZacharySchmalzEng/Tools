@@ -1,12 +1,16 @@
 # Linux Automated Deployment & Provisioning Tool
 
-> 🚀 **PRODUCTION STATUS (v2.0.1):** This deployment tool is production-ready with official public support. It features comprehensive self-bootstrapping, zero on-box prerequisites, multi-distro special handling, and hardware-aware driver orchestration. Feature requests, questions, and bug reports are actively supported via [GitHub Issues](https://github.com/ZacharySchmalzEng/Tools/issues).
+Version 2.1 provides a modular, self-bootstrapping deployment tool with multi-distribution handling and hardware-aware driver orchestration. For questions, bug reports, and feature requests, use [GitHub Issues](https://github.com/ZacharySchmalzEng/Tools/issues).
 
 **`Linux-Deployment-Tool.sh`** is a highly modular, flag-based Bash script designed to transform a fresh Linux installation into a hardened, fully configured power-user workstation.
 
 Rather than a monolithic installation script, this tool uses command-line flags to let you pick and choose exactly which application stacks, system tweaks, and security hardening tiers you want to deploy.
 
-## 📋 Release Changelog (v2.0.1)
+## 📋 Release Changelog (v2.1)
+
+### 🚀 Feature Enhancements
+* **Multi-Tier Recovery Modes (v2.1):** Added `--reinstall` for package-manager reinstall operations and `--rebuild` to also rebuild supported GPU kernel modules and initramfs images. Fedora Atomic and Bazzite cannot force-reinstall host-image drivers; Ubuntu reinstalls its currently installed NVIDIA stack or selects a recommended driver when none is installed.
+* **DNF Network Retries (v2.1):** DNF package and metadata operations allow up to 10 retries with a 60-second timeout to better tolerate slow or intermittently unreachable mirrors.
 
 ### 🐛 Defect Resolutions & Bug Fixes
 * **Flathub OrcaSlicer App ID Migration (v2.0.1):** Migrated package identifier from deprecated `com.softfever.OrcaSlicer` to `com.orcaslicer.OrcaSlicer`, with automated legacy fallback in `install_flatpak_app()` to prevent `error: Nothing matches in remote flathub`.
@@ -53,6 +57,8 @@ sudo ./Linux-Deployment-Tool.sh --all --steamos                     # Force Stea
 sudo ./Linux-Deployment-Tool.sh --all --opensuse                    # Force openSUSE (Packman repos & Zypper)
 sudo ./Linux-Deployment-Tool.sh --all --arch                        # Force Arch Linux (Pacman & multilib)
 sudo ./Linux-Deployment-Tool.sh --all --2fa --unattended            # Hands-free deployment with MFA SSH
+sudo ./Linux-Deployment-Tool.sh --gaming --reinstall -y            # Reinstall selected gaming and driver packages
+sudo ./Linux-Deployment-Tool.sh --gaming --rebuild -y              # Reinstall and rebuild supported driver modules/initramfs
 sudo ./Linux-Deployment-Tool.sh --update --harden-advanced --debug  # Update, strict harden, and trace commands
 sudo ./Linux-Deployment-Tool.sh --all -d                            # Dry-run: Resolve and download packages only
 ```
@@ -92,6 +98,8 @@ sudo ./Linux-Deployment-Tool.sh --all -d                            # Dry-run: R
 | Flag | Description |
 | :--- | :--- |
 | `--all` | Executes all standard modules. *(Note: Intentionally excludes `--harden-advanced` and `--2fa` to prevent accidental lockouts).* |
+| `--reinstall` | Reinstalls packages selected by other modules using native package-manager operations. Can be combined with module flags such as `--gaming`; Flatpak apps are reinstalled when selected. |
+| `--rebuild` | Includes `--reinstall` and rebuilds supported DKMS/akmods modules and initramfs images. It does not bypass package-manager locks. On Arch Linux and SteamOS, Pacman's `--overwrite '*'` is limited to explicit GPU-driver package transactions; use this mode only when repairing those drivers. On Fedora Atomic, `--gaming --rebuild` clears the pending rpm-ostree deployment, including unrelated staged changes, before normal idempotent NVIDIA layering; it cannot force-reinstall host-image drivers. Bazzite does not support host-image NVIDIA driver rebuilds. |
 | `-y` | Auto-install (answers yes to all package manager prompts). |
 | `-d` | Download only (applies to DNF updates, excellent for dry-run validations). |
 | `--unattended` | Bypasses the DE prompt (defaults to KDE), suppresses the reboot prompt, and applies `-y` automatically. |

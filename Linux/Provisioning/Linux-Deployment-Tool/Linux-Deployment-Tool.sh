@@ -11,13 +11,12 @@
 #
 # AUTHOR
 #     Zachary Schmalz
-#     Repository:     https://github.com/ZacharySchmalzEng/Tools/
+#     Repository:      https://github.com/ZacharySchmalzEng/Tools/
 #     Issues/Requests: Please direct all feature requests and bug reports to:
-#                     https://github.com/ZacharySchmalzEng/Tools/issues
+#                      https://github.com/ZacharySchmalzEng/Tools/issues
 #
 # NOTES
-#     Version:        2.0.1
-#     Status:         Production Hotfix Release
+#     Version:        2.1
 #     Requirements:   Bash, root/sudo privileges, active internet connection.
 #                     Zero manual on-box dependencies (automatic self-bootstrapping).
 #     Supported OS:   Fedora, Nobara, Fedora Atomic (Silverblue/Bazzite),
@@ -46,6 +45,19 @@
 # ------------------------------------------------------------------------------
 # DEFECT RESOLUTIONS & BUG FIXES
 # ------------------------------------------------------------------------------
+#     v2.1:
+#       - Fixed Hybrid GPU Detection: Inspects all lspci display-controller entries and falls back
+#         to sysfs, preventing an Intel iGPU from masking a supported NVIDIA or AMD discrete GPU.
+#     v2.0.2:
+#       - Resolved Flatpak Non-Zero Exit Abort: Updated install_flatpak_app() to gracefully
+#         warn and return 0 on skipped or failed Flatpak installations rather than triggering
+#         the ERR trap under strict set -e mode.
+#       - Resolved Wireshark-Qt Package Resolution Failure: Mapped wireshark-qt to wireshark
+#         for Fedora/RPM distros and added --skip-unavailable to dnf package transactions.
+#       - Resolved Multiline Array Logging: Restored default standard IFS parsing so array expansion
+#         logs correctly with space separators instead of newlines.
+#       - Resolved Top-Level Local Keyword Errors: Removed invalid top-level local declarations
+#         from hardening, discord, and gaming configuration blocks.
 #     v2.0.1:
 #       - Resolved Flathub OrcaSlicer App ID Not Found: Migrated package identifier from
 #         deprecated 'com.softfever.OrcaSlicer' to 'com.orcaslicer.OrcaSlicer' with automated
@@ -70,6 +82,16 @@
 # ------------------------------------------------------------------------------
 # FEATURE ENHANCEMENTS
 # ------------------------------------------------------------------------------
+#     v2.1:
+#       - Multi-Tier Reinstall Engine: Added --reinstall for native package-manager reinstalls
+#         and --rebuild for supported DKMS/akmods and initramfs recovery. Pacman file overwrites
+#         are limited to GPU-driver transactions; Atomic NVIDIA rebuilds clear pending rpm-ostree
+#         changes and warn that unrelated staged changes are discarded.
+#       - DNF Network Resilience: Added 10 retries and a 60-second timeout to DNF package and
+#         metadata operations to better tolerate slow or intermittently unreachable mirrors.
+#       - Split Installed/Missing Package Routing: Added rpm -q state inspection in pkg_install()
+#         so DNF and Zypper cleanly split mixed package arrays into separate 'install' and
+#         'reinstall' transactions without failing on missing packages.
 #     v2.0:
 #       - Multi-Distro Engine: Added native support for Fedora Atomic variants (Silverblue,
 #         Bazzite, Kinoite), Arch Linux, SteamOS (Steam Deck), and openSUSE (Tumbleweed & Leap).
@@ -91,7 +113,6 @@
 # 1. STRICT MODE, SECURITY UMASK & ERROR TRAPPING
 # ------------------------------------------------------------------------------
 set -euo pipefail
-IFS=$'\n\t'
 umask 077
 
 # ------------------------------------------------------------------------------
@@ -102,6 +123,7 @@ readonly COLOR_SUCCESS='\e[32m'
 readonly COLOR_WARN='\e[33m'
 readonly COLOR_ERROR='\e[31m'
 readonly COLOR_RESET='\e[0m'
+readonly DNF_RETRY_OPTIONS=(--setopt=retries=10 --setopt=timeout=60)
 
 log_info()    { echo -e "${COLOR_INFO}[INFO] $1${COLOR_RESET}"; }
 log_success() { echo -e "${COLOR_SUCCESS}[+] $1${COLOR_RESET}"; }
@@ -110,6 +132,7 @@ log_error()   { echo -e "${COLOR_ERROR}[ERROR] $1${COLOR_RESET}" >&2; }
 
 # Global State Flags for Signal & Error Restoration
 IS_STEAMOS_UNLOCKED=false
+CACHE_REFRESHED=false
 declare -a TEMP_CLEANUP_DIRS=()
 
 cleanup_handler() {
@@ -343,9 +366,14 @@ detect_distro() {
 }
 
 refresh_package_cache() {
+    local force="${1:-false}"
+    if [[ "$CACHE_REFRESHED" == true && "$force" != "force" ]]; then
+        return 0
+    fi
+
     case "$DISTRO_FAMILY" in
         rpm)
-            if ! run_cmd "Refreshing DNF package metadata" dnf makecache --refresh; then
+            if ! run_cmd "Refreshing DNF package metadata" dnf "${DNF_RETRY_OPTIONS[@]}" makecache --refresh; then
                 log_warn "DNF metadata refresh failed. Continuing..."
             fi
             ;;
@@ -378,11 +406,18 @@ refresh_package_cache() {
             fi
             ;;
     esac
+    CACHE_REFRESHED=true
 }
 
 resolve_package_name() {
     local package="$1"
     case "$DISTRO_FAMILY" in
+        rpm|atomic)
+            case "$package" in
+                wireshark-qt) echo "wireshark" ;;
+                *) echo "$package" ;;
+            esac
+            ;;
         deb)
             case "$package" in
                 btop) echo "btop" ;;
@@ -457,17 +492,52 @@ pkg_install() {
 
     case "$DISTRO_FAMILY" in
         rpm)
-            local install_cmd=(dnf)
-            if [[ "$AUTO_YES" == "-y" ]]; then install_cmd+=(-y); fi
-            install_cmd+=(install "${resolved_packages[@]}")
             refresh_package_cache
-            if ! run_cmd "Installing packages: ${resolved_packages[*]}" "${install_cmd[@]}"; then
-                log_warn "Package installation failed for: ${resolved_packages[*]}"
-                return 1
+            if [[ "$RUN_REINSTALL" == true ]]; then
+                local reinstall_packages=() install_packages=()
+                for package in "${resolved_packages[@]}"; do
+                    # URLs / direct RPM paths or missing packages go to standard install
+                    if [[ "$package" =~ ^https?:// || "$package" == *.rpm ]]; then
+                        install_packages+=("$package")
+                    elif rpm -q "$package" &>/dev/null; then
+                        reinstall_packages+=("$package")
+                    else
+                        install_packages+=("$package")
+                    fi
+                done
+                if [[ ${#reinstall_packages[@]} -gt 0 ]]; then
+                    local reinstall_cmd=(dnf "${DNF_RETRY_OPTIONS[@]}")
+                    if [[ "$AUTO_YES" == "-y" ]]; then reinstall_cmd+=(-y); fi
+                    reinstall_cmd+=(reinstall "${reinstall_packages[@]}")
+                    if ! run_cmd "Reinstalling packages: ${reinstall_packages[*]}" "${reinstall_cmd[@]}"; then
+                        log_warn "Package reinstallation failed for: ${reinstall_packages[*]}"
+                        return 1
+                    fi
+                fi
+                if [[ ${#install_packages[@]} -gt 0 ]]; then
+                    local install_cmd=(dnf "${DNF_RETRY_OPTIONS[@]}")
+                    if [[ "$AUTO_YES" == "-y" ]]; then install_cmd+=(-y); fi
+                    install_cmd+=(install --skip-unavailable "${install_packages[@]}")
+                    if ! run_cmd "Installing missing packages: ${install_packages[*]}" "${install_cmd[@]}"; then
+                        log_warn "Package installation failed for: ${install_packages[*]}"
+                        return 1
+                    fi
+                fi
+            else
+                local install_cmd=(dnf "${DNF_RETRY_OPTIONS[@]}")
+                if [[ "$AUTO_YES" == "-y" ]]; then install_cmd+=(-y); fi
+                install_cmd+=(install --skip-unavailable "${resolved_packages[@]}")
+                if ! run_cmd "Installing packages: ${resolved_packages[*]}" "${install_cmd[@]}"; then
+                    log_warn "Package installation failed for: ${resolved_packages[*]}"
+                    return 1
+                fi
             fi
             ;;
         atomic)
             log_info "Fedora Atomic: Layering host packages via rpm-ostree..."
+            if [[ "$RUN_REINSTALL" == true ]]; then
+                log_warn "rpm-ostree does not support package-level reinstall; applying its normal idempotent layering behavior."
+            fi
             local ostree_cmd=(rpm-ostree install --idempotent)
             if rpm-ostree install --help 2>&1 | grep -q -- "--apply-live"; then
                 ostree_cmd+=(--apply-live)
@@ -479,7 +549,10 @@ pkg_install() {
             fi
             ;;
         arch)
-            local arch_cmd=(pacman -S --needed)
+            local arch_cmd=(pacman -S)
+            if [[ "$RUN_REINSTALL" != true ]]; then
+                arch_cmd+=(--needed)
+            fi
             if [[ "$AUTO_YES" == "-y" ]]; then arch_cmd+=(--noconfirm); fi
             arch_cmd+=("${resolved_packages[@]}")
             refresh_package_cache
@@ -490,7 +563,10 @@ pkg_install() {
             ;;
         steamos)
             steamos_unlock
-            local steam_cmd=(pacman -S --needed)
+            local steam_cmd=(pacman -S)
+            if [[ "$RUN_REINSTALL" != true ]]; then
+                steam_cmd+=(--needed)
+            fi
             if [[ "$AUTO_YES" == "-y" ]]; then steam_cmd+=(--noconfirm); fi
             steam_cmd+=("${resolved_packages[@]}")
             refresh_package_cache
@@ -504,6 +580,7 @@ pkg_install() {
             ;;
         opensuse)
             local zypper_cmd=(zypper --non-interactive install --auto-agree-with-licenses)
+            if [[ "$RUN_REINSTALL" == true ]]; then zypper_cmd+=(--force); fi
             zypper_cmd+=("${resolved_packages[@]}")
             refresh_package_cache
             if ! run_cmd "Installing packages via Zypper: ${resolved_packages[*]}" "${zypper_cmd[@]}"; then
@@ -515,7 +592,9 @@ pkg_install() {
             export DEBIAN_FRONTEND=noninteractive
             local deb_cmd=(apt-get)
             if [[ "$AUTO_YES" == "-y" ]]; then deb_cmd+=(--yes); fi
-            deb_cmd+=(install "${resolved_packages[@]}")
+            deb_cmd+=(install)
+            if [[ "$RUN_REINSTALL" == true ]]; then deb_cmd+=(--reinstall); fi
+            deb_cmd+=("${resolved_packages[@]}")
             refresh_package_cache
             if ! run_cmd "Installing packages via APT: ${resolved_packages[*]}" "${deb_cmd[@]}"; then
                 log_warn "Package installation failed for: ${resolved_packages[*]}"
@@ -532,12 +611,16 @@ pkg_install() {
 update_system() {
     case "$DISTRO_FAMILY" in
         rpm)
-            local update_cmd=(dnf)
+            local update_cmd=(dnf "${DNF_RETRY_OPTIONS[@]}")
             if [[ "$AUTO_YES" == "-y" ]]; then update_cmd+=(-y); fi
             update_cmd+=(upgrade)
             if [[ -n "$DOWNLOAD_ONLY" ]]; then update_cmd+=("$DOWNLOAD_ONLY"); fi
             refresh_package_cache
             run_cmd "Updating system packages via DNF" "${update_cmd[@]}" || log_warn "System update failed."
+            if [[ "$RUN_REBUILD" == true && -z "$DOWNLOAD_ONLY" ]]; then
+                log_info "Rebuild active with --update: Running DNF distro-sync to repair package drift..."
+                dnf "${DNF_RETRY_OPTIONS[@]}" distro-sync ${AUTO_YES:+$AUTO_YES} --skip-unavailable || log_warn "DNF distro-sync reported warnings."
+            fi
             ;;
         atomic)
             log_info "Fedora Atomic: Upgrading OS tree via rpm-ostree..."
@@ -571,6 +654,10 @@ update_system() {
             if [[ -n "$DOWNLOAD_ONLY" ]]; then deb_update+=("$DOWNLOAD_ONLY"); fi
             refresh_package_cache
             run_cmd "Updating Debian/Ubuntu packages via APT" "${deb_update[@]}" || log_warn "APT update failed."
+            if [[ "$RUN_REBUILD" == true && -z "$DOWNLOAD_ONLY" ]]; then
+                log_info "Rebuild active with --update: Running apt-get install -f to repair broken dependencies..."
+                apt-get install -f ${AUTO_YES:+--yes} || true
+            fi
             ;;
     esac
 }
@@ -580,7 +667,7 @@ ensure_flatpak() {
         log_info "Flatpak not found on system. Automatically installing Flatpak support..."
         case "$DISTRO_FAMILY" in
             rpm)
-                run_cmd "Installing Flatpak" dnf install ${AUTO_YES:+$AUTO_YES} flatpak || log_warn "Flatpak install failed."
+                run_cmd "Installing Flatpak" dnf "${DNF_RETRY_OPTIONS[@]}" install ${AUTO_YES:+$AUTO_YES} flatpak || log_warn "Flatpak install failed."
                 ;;
             atomic)
                 log_info "Flatpak is native on Fedora Atomic."
@@ -613,18 +700,19 @@ install_flatpak_app() {
     local app="$1"
     local fallback="${2:-}"
     ensure_flatpak
-    local yes_flag=""
-    if [[ "$AUTO_YES" == "-y" ]]; then yes_flag="--assumeyes"; fi
+    local fp_flags=()
+    if [[ "$AUTO_YES" == "-y" ]]; then fp_flags+=(--assumeyes); fi
+    if [[ "$RUN_REINSTALL" == true ]]; then fp_flags+=(--reinstall); fi
 
-    if flatpak install ${yes_flag:+$yes_flag} flathub "$app" 2>/dev/null; then
+    if flatpak install "${fp_flags[@]}" flathub "$app" 2>/dev/null; then
         log_success "Flatpak app installed: $app"
         return 0
-    elif [[ -n "$fallback" ]] && flatpak install ${yes_flag:+$yes_flag} flathub "$fallback" 2>/dev/null; then
+    elif [[ -n "$fallback" ]] && flatpak install "${fp_flags[@]}" flathub "$fallback" 2>/dev/null; then
         log_success "Flatpak app installed using legacy fallback: $fallback"
         return 0
     else
-        log_warn "Failed to install Flatpak app: $app${fallback:+ (or legacy $fallback)}"
-        return 1
+        log_warn "Skipped or failed to install Flatpak app: $app${fallback:+ (or legacy $fallback)}"
+        return 0
     fi
 }
 
@@ -685,7 +773,7 @@ bootstrap_prerequisites() {
         log_info "Auto-installing missing core dependencies: ${missing_pkgs[*]}"
         case "$DISTRO_FAMILY" in
             rpm)
-                dnf install ${AUTO_YES:+$AUTO_YES} "${missing_pkgs[@]}" || log_warn "Auto-bootstrap notice: some base packages could not be installed."
+                dnf "${DNF_RETRY_OPTIONS[@]}" install ${AUTO_YES:+$AUTO_YES} "${missing_pkgs[@]}" || log_warn "Auto-bootstrap notice: some base packages could not be installed."
                 ;;
             atomic)
                 log_info "Fedora Atomic: Base utilities typically included in OS tree."
@@ -713,7 +801,7 @@ bootstrap_prerequisites() {
 }
 
 install_powershell() {
-    if command -v pwsh &>/dev/null; then
+    if command -v pwsh &>/dev/null && [[ "$RUN_REINSTALL" != true ]]; then
         log_success "Microsoft PowerShell (pwsh) is already installed."
         return 0
     fi
@@ -721,11 +809,13 @@ install_powershell() {
     log_info "Installing Microsoft PowerShell (pwsh)..."
     case "$DISTRO_FAMILY" in
         rpm)
-            if ! rpm -q powershell &>/dev/null; then
+            if ! rpm -q powershell &>/dev/null || [[ "$RUN_REINSTALL" == true ]]; then
                 log_info "Configuring Microsoft RPM repository for PowerShell..."
                 rpm --import https://packages.microsoft.com/keys/microsoft.asc 2>/dev/null || true
-                curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL https://packages.microsoft.com/config/rhel/9/prod.repo -o /etc/yum.repos.d/microsoft-prod.repo 2>/dev/null || true
-                if ! dnf install ${AUTO_YES:+$AUTO_YES} powershell; then
+                if curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL https://packages.microsoft.com/config/rhel/9/prod.repo -o /etc/yum.repos.d/microsoft-prod.repo 2>/dev/null; then
+                    chmod 0644 /etc/yum.repos.d/microsoft-prod.repo || log_warn "Could not make the Microsoft repository configuration readable to DNF."
+                fi
+                if ! pkg_install powershell; then
                     log_warn "Native RPM PowerShell failed; falling back to Flathub package..."
                     install_flatpak_app com.microsoft.PowerShell
                 fi
@@ -737,7 +827,7 @@ install_powershell() {
             ;;
         arch)
             log_info "Installing PowerShell via pacman or Flathub..."
-            if ! pacman -S --needed --noconfirm powershell 2>/dev/null; then
+            if ! pkg_install powershell 2>/dev/null; then
                 install_flatpak_app com.microsoft.PowerShell
             fi
             ;;
@@ -745,18 +835,18 @@ install_powershell() {
             log_info "Configuring Microsoft SLES repository for openSUSE..."
             rpm --import https://packages.microsoft.com/keys/microsoft.asc 2>/dev/null || true
             zypper addrepo https://packages.microsoft.com/sles/15/prod/ microsoft-prod 2>/dev/null || true
-            if ! zypper --non-interactive install --auto-agree-with-licenses powershell; then
+            if ! pkg_install powershell; then
                 install_flatpak_app com.microsoft.PowerShell
             fi
             ;;
         deb)
-            if ! dpkg -s powershell &>/dev/null 2>&1; then
+            if ! dpkg -s powershell &>/dev/null 2>&1 || [[ "$RUN_REINSTALL" == true ]]; then
                 export DEBIAN_FRONTEND=noninteractive
                 curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg 2>/dev/null || true
                 local deb_ver="${VERSION_ID:-22.04}"
                 echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-${deb_ver}-prod ${UBUNTU_CODENAME:-jammy} main" > /etc/apt/sources.list.d/microsoft-prod.list 2>/dev/null || true
-                apt-get update -qq || true
-                if ! apt-get install ${AUTO_YES:+$AUTO_YES} powershell; then
+                CACHE_REFRESHED=false
+                if ! pkg_install powershell; then
                     log_warn "Native DEB PowerShell failed; falling back to Flathub package..."
                     install_flatpak_app com.microsoft.PowerShell
                 fi
@@ -776,45 +866,47 @@ print_usage() {
     echo "Usage: sudo ./Linux-Deployment-Tool.sh [Options]"
     echo ""
     echo "MODULE OPTIONS:"
-    echo "  --update           Sequentially upgrades package manager, Flatpak, and Snap"
-    echo "  --apps             Installs core utilities (Browsers, Media, Search)"
-    echo "  --devapps          Installs Dev tools (VS Code, Python, GitHub Desktop, PowerShell)"
-    echo "  --cyber            Installs Security tools (Wireshark, Nmap, TCPDump)"
-    echo "  --maker            Installs 3D Printing Slicers (Prusa, Orca, Bambu)"
-    echo "  --creators         Installs Creative suite (Blender, Darktable, OBS)"
-    echo "  --gaming           Configures Steam, Lutris, Winetricks, Repos, GPU Drivers"
-    echo "  --ssh              Installs, enables, and verifies OpenSSH Server"
-    echo "  --discord          Configures Discord (Native RPM on standard, Flatpak on Atomic/SteamOS)"
+    echo "  --update            Sequentially upgrades package manager, Flatpak, and Snap"
+    echo "  --apps              Installs core utilities (Browsers, Media, Search)"
+    echo "  --devapps           Installs Dev tools (VS Code, Python, GitHub Desktop, PowerShell)"
+    echo "  --cyber             Installs Security tools (Wireshark, Nmap, TCPDump)"
+    echo "  --maker             Installs 3D Printing Slicers (Prusa, Orca, Bambu)"
+    echo "  --creators          Installs Creative suite (Blender, Darktable, OBS)"
+    echo "  --gaming            Configures Steam, Lutris, Winetricks, Repos, GPU Drivers"
+    echo "  --ssh               Installs, enables, and verifies OpenSSH Server"
+    echo "  --discord           Configures Discord (Native RPM on standard, Flatpak on Atomic/SteamOS)"
     echo ""
     echo "DISTRIBUTION OVERRIDES (Auto-detected if omitted):"
-    echo "  --atomic           Force Fedora Atomic (Silverblue/Kinoite) rpm-ostree mode"
-    echo "  --bazzite          Force Bazzite (Fedora Atomic Gaming) mode"
-    echo "  --silverblue       Alias for --atomic"
-    echo "  --arch             Force Arch Linux pacman mode"
-    echo "  --steamos          Force SteamOS mode (Steam Deck immutable root toggle)"
-    echo "  --opensuse         Force openSUSE (Tumbleweed/Leap) zypper mode"
-    echo "  --distro=<name>    Explicit distribution override (atomic|bazzite|arch|steamos|opensuse|nobara|rpm|deb)"
+    echo "  --atomic            Force Fedora Atomic (Silverblue/Kinoite) rpm-ostree mode"
+    echo "  --bazzite           Force Bazzite (Fedora Atomic Gaming) mode"
+    echo "  --silverblue        Alias for --atomic"
+    echo "  --arch              Force Arch Linux pacman mode"
+    echo "  --steamos           Force SteamOS mode (Steam Deck immutable root toggle)"
+    echo "  --opensuse          Force openSUSE (Tumbleweed/Leap) zypper mode"
+    echo "  --distro=<name>     Explicit distribution override (atomic|bazzite|arch|steamos|opensuse|nobara|rpm|deb)"
     echo ""
     echo "DESKTOP ENVIRONMENT OVERRIDES (Auto-detected if omitted):"
-    echo "  --gnome            Target GNOME desktop environment and QoL tools"
-    echo "  --kde              Target KDE Plasma desktop environment and QoL tools"
-    echo "  --cosmic           Target COSMIC desktop environment (System76) and tools"
-    echo "  --xfce             Target XFCE desktop environment and utilities"
-    echo "  --cinnamon         Target Cinnamon desktop environment and utilities"
-    echo "  --de=<name>        Explicit desktop environment override (gnome|kde|cosmic|xfce|cinnamon)"
+    echo "  --gnome             Target GNOME desktop environment and QoL tools"
+    echo "  --kde               Target KDE Plasma desktop environment and QoL tools"
+    echo "  --cosmic            Target COSMIC desktop environment (System76) and tools"
+    echo "  --xfce              Target XFCE desktop environment and utilities"
+    echo "  --cinnamon          Target Cinnamon desktop environment and utilities"
+    echo "  --de=<name>         Explicit desktop environment override (gnome|kde|cosmic|xfce|cinnamon)"
     echo ""
     echo "SECURITY & HARDENING:"
-    echo "  --harden           Safe baseline: SELinux/AppArmor, Auto-Patching, No Root SSH"
-    echo "  --harden-advanced  Strict: auditd, Sysctl network drops, No Password SSH"
-    echo "  --2fa              Modifies the --ssh module to enforce Google Auth MFA"
+    echo "  --harden            Safe baseline: SELinux/AppArmor, Auto-Patching, No Root SSH"
+    echo "  --harden-advanced   Strict: auditd, Sysctl network drops, No Password SSH"
+    echo "  --2fa               Modifies the --ssh module to enforce Google Auth MFA"
     echo ""
     echo "GLOBAL OPTIONS:"
-    echo "  --all              Executes ALL standard modules (Excludes harden-advanced)"
-    echo "  -y                 Auto-install (answers yes to prompts)"
-    echo "  -d                 Download only (applies to DNF/APT updates)"
-    echo "  --debug            Enables command tracing (set -x) for troubleshooting"
-    echo "  --unattended       Bypasses prompts, defaults to KDE, and auto-answers yes"
-    echo "  --help             Displays this help menu"
+    echo "  --all               Executes ALL standard modules (Excludes harden-advanced)"
+    echo "  --reinstall         Reinstalls packages selected by other modules where supported"
+    echo "  --rebuild           Reinstalls packages and rebuilds supported GPU modules/initramfs"
+    echo "  -y                  Auto-install (answers yes to prompts)"
+    echo "  -d                  Download only (applies to DNF/APT updates)"
+    echo "  --debug             Enables command tracing (set -x) for troubleshooting"
+    echo "  --unattended        Bypasses prompts, defaults to KDE, and auto-answers yes"
+    echo "  --help              Displays this help menu"
     echo -e "===============================================================\n"
 }
 
@@ -838,6 +930,8 @@ RUN_DEBUG=false
 UNATTENDED=false
 AUTO_YES=""
 DOWNLOAD_ONLY=""
+RUN_REINSTALL=false
+RUN_REBUILD=false
 
 if [[ "$#" -eq 0 ]]; then
     print_usage
@@ -859,6 +953,8 @@ while [[ "$#" -gt 0 ]]; do
         --discord) RUN_DISCORD=true ;;
         --harden) RUN_HARDEN=true ;;
         --harden-advanced) RUN_HARDEN_ADV=true ;;
+        --reinstall) RUN_REINSTALL=true ;;
+        --rebuild) RUN_REBUILD=true; RUN_REINSTALL=true ;;
         --debug) RUN_DEBUG=true ;;
         --unattended) UNATTENDED=true ;;
         --atomic) DISTRO_OVERRIDE="atomic" ;;
@@ -906,8 +1002,8 @@ done
 detect_distro
 
 if [[ "$RUN_ALL" == true ]]; then
-    RUN_UPDATE=true; RUN_APPS=true; RUN_DEVAPPS=true; RUN_CYBER=true; 
-    RUN_MAKER=true; RUN_CREATORS=true; RUN_GAMING=true; RUN_SSH=true; 
+    RUN_UPDATE=true; RUN_APPS=true; RUN_DEVAPPS=true; RUN_CYBER=true;
+    RUN_MAKER=true; RUN_CREATORS=true; RUN_GAMING=true; RUN_SSH=true;
     RUN_DISCORD=true; RUN_HARDEN=true;
 fi
 
@@ -942,6 +1038,12 @@ fi
 
 log_success "Running with root privileges."
 log_info "Logging execution to: $LOG_FILE"
+
+if [[ "$RUN_REBUILD" == true ]]; then
+    log_warn "Deep Recovery Mode (--rebuild) is ACTIVE. Rebuilding supported GPU modules and initramfs images."
+elif [[ "$RUN_REINSTALL" == true ]]; then
+    log_info "Safe Reinstall Mode (--reinstall) is ACTIVE. Refreshing packages via native managers."
+fi
 
 bootstrap_prerequisites
 
@@ -1097,7 +1199,7 @@ if [[ "$RUN_CYBER" == true ]]; then
     if ! pkg_install "${CYBER_PKGS[@]}"; then
         log_warn "Some cybersecurity packages could not be installed. Continuing..."
     fi
-    if [[ -n "${SUDO_USER:-}" ]]; then
+    if [[ -n "${SUDO_USER:-}" ]] && getent group wireshark &>/dev/null; then
         usermod -aG wireshark "$SUDO_USER" || true
     fi
     log_success "Cyber module complete."
@@ -1132,7 +1234,7 @@ fi
 # ==============================================================================
 if [[ "$RUN_HARDEN" == true ]]; then
     echo -e "\n\e[35m[========== STARTING STANDARD HARDENING ==========]\e[0m"
-    
+
     if [[ "$DISTRO_FAMILY" == "rpm" || "$DISTRO_FAMILY" == "atomic" ]]; then
         log_info "Verifying SELinux Enforcement..."
         if command -v setenforce &> /dev/null; then
@@ -1154,7 +1256,7 @@ if [[ "$RUN_HARDEN" == true ]]; then
             log_info "Download-only mode active: staged dnf-automatic package without modifying service files."
         else
             pkg_install dnf-automatic 2>/dev/null || pkg_install dnf5-plugin-automatic 2>/dev/null || true
-            local dnf_auto_conf="/etc/dnf/automatic.conf"
+            dnf_auto_conf="/etc/dnf/automatic.conf"
             mkdir -p /etc/dnf
             if [[ ! -f "$dnf_auto_conf" ]]; then
                 log_info "Creating default security configuration: $dnf_auto_conf"
@@ -1220,7 +1322,7 @@ fi
 # ==============================================================================
 if [[ "$RUN_HARDEN_ADV" == true ]]; then
     echo -e "\n\e[35m[========== STARTING ADVANCED HARDENING ==========]\e[0m"
-    
+
     log_info "Applying Strict CIS Level 2 Sysctl Network Drops & Memory Protection..."
     readonly SYSCTL_CONF="/etc/sysctl.d/99-security.conf"
     cat <<EOF > "$SYSCTL_CONF"
@@ -1284,8 +1386,8 @@ fi
 # ==============================================================================
 if [[ "$RUN_SSH" == true ]]; then
     echo -e "\n\e[35m[========== STARTING SSH PROVISIONING MODULE ==========]\e[0m"
-    if ! dpkg -s openssh-server &> /dev/null 2>&1 && ! rpm -q openssh-server &> /dev/null 2>&1 && ! command -v sshd &>/dev/null; then
-        log_info "Installing OpenSSH Server..."
+    if [[ "$RUN_REINSTALL" == true ]] || { ! dpkg -s openssh-server &> /dev/null 2>&1 && ! rpm -q openssh-server &> /dev/null 2>&1 && ! command -v sshd &>/dev/null; }; then
+        log_info "Installing/Re-installing OpenSSH Server..."
         pkg_install openssh-server
     fi
 
@@ -1316,7 +1418,7 @@ if [[ "$RUN_SSH" == true ]]; then
             log_warn "Service is running, but no SSH listener detected."
         fi
     fi
-    
+
     if [[ "$RUN_2FA" == true ]]; then
         echo -e "\n\e[33m****************************************************************"
         echo -e "2FA WARNING: SSH MFA has been enforced at the system level."
@@ -1339,7 +1441,6 @@ if [[ "$RUN_DISCORD" == true ]]; then
             flatpak uninstall ${AUTO_YES:+--assumeyes} "discord" 2>/dev/null || true
         fi
         if [[ "$IS_NOBARA" != true ]]; then
-            local fedora_ver
             fedora_ver=$(rpm -E %fedora 2>/dev/null || true)
             if [[ -z "$fedora_ver" || "$fedora_ver" == "%fedora" ]]; then
                 fedora_ver="${VERSION_ID:-41}"
@@ -1347,6 +1448,7 @@ if [[ "$RUN_DISCORD" == true ]]; then
             fi
             pkg_install "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_ver}.noarch.rpm" || true
             pkg_install "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_ver}.noarch.rpm" || true
+            CACHE_REFRESHED=false
         else
             log_info "Nobara detected: RPM Fusion repositories are already built-in."
         fi
@@ -1364,7 +1466,6 @@ if [[ "$RUN_GAMING" == true ]]; then
         readonly PRE_PKGS=(flatpak snap dnf-plugins-core)
         pkg_install "${PRE_PKGS[@]}"
         if [[ "$IS_NOBARA" != true ]]; then
-            local fedora_ver
             fedora_ver=$(rpm -E %fedora 2>/dev/null || true)
             if [[ -z "$fedora_ver" || "$fedora_ver" == "%fedora" ]]; then
                 fedora_ver="${VERSION_ID:-41}"
@@ -1372,7 +1473,8 @@ if [[ "$RUN_GAMING" == true ]]; then
             fi
             pkg_install "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_ver}.noarch.rpm" || true
             pkg_install "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_ver}.noarch.rpm" || true
-            dnf group upgrade core ${AUTO_YES:+$AUTO_YES} || true
+            CACHE_REFRESHED=false
+            dnf "${DNF_RETRY_OPTIONS[@]}" group upgrade core ${AUTO_YES:+$AUTO_YES} || true
         else
             log_info "Nobara detected: Native gaming repository stack & Wine dependencies already active."
         fi
@@ -1388,13 +1490,13 @@ if [[ "$RUN_GAMING" == true ]]; then
     else
         pkg_install flatpak snapd
     fi
-    
+
     ensure_flatpak
     readonly GAMING_PKGS=(winetricks steam lutris)
     pkg_install "${GAMING_PKGS[@]}"
     install_flatpak_app net.davidotek.pupgui2 || true
     install_flatpak_app com.usebottles.bottles || true
-    
+
     if command -v fwupdmgr &>/dev/null; then
         fwupdmgr refresh --force || true
         fwupdmgr get-devices || true
@@ -1403,10 +1505,10 @@ if [[ "$RUN_GAMING" == true ]]; then
 
     GPU_INFO=""
     if command -v lspci &>/dev/null; then
-        GPU_INFO=$(lspci -nn 2>/dev/null | grep -E 'VGA|3D controller' | head -n 1 || true)
+        GPU_INFO=$(lspci -nn 2>/dev/null | grep -E 'VGA|3D controller|Display controller' || true)
     fi
-    # Secondary PCI identification via /sys/bus/pci/devices if lspci is unavailable
-    if [[ -z "$GPU_INFO" ]] && [[ -d /sys/bus/pci/devices ]]; then
+    # Use sysfs if lspci did not identify a supported discrete GPU vendor.
+    if ! grep -qiE 'NVIDIA|Advanced Micro Devices|AMD' <<< "$GPU_INFO" && [[ -d /sys/bus/pci/devices ]]; then
         if grep -qsi "0x10de" /sys/bus/pci/devices/*/vendor 2>/dev/null; then
             GPU_INFO="NVIDIA Corporation [PCI ID 0x10de auto-detected via sysfs]"
         elif grep -qsi "0x1002" /sys/bus/pci/devices/*/vendor 2>/dev/null; then
@@ -1417,30 +1519,114 @@ if [[ "$RUN_GAMING" == true ]]; then
     case "$GPU_INFO" in
         *"NVIDIA"*)
             if [[ "$IS_NOBARA" == true ]]; then
-                log_success "Nobara Linux detected: NVIDIA proprietary drivers are pre-installed via DKMS & the official 'nobara-nvidia-production' repository."
-                log_info "Nobara Best Practice: Skipping manual akmod-nvidia installation to prevent fatal transaction conflicts with Nobara's custom kernel modules. Use 'nobara-sync' or the Nobara Driver Manager for driver maintenance."
+                if [[ "$RUN_REBUILD" == true ]]; then
+                    log_warn "Nobara Linux + Rebuild: Re-installing Nobara NVIDIA DKMS driver stack and rebuilding kernel modules..."
+                    dnf "${DNF_RETRY_OPTIONS[@]}" reinstall ${AUTO_YES:+$AUTO_YES} "*nvidia*" || log_warn "Nobara NVIDIA package reinstall returned warnings."
+                    if command -v dkms &>/dev/null; then
+                        run_cmd "Rebuilding DKMS kernel modules" dkms autoinstall || true
+                    fi
+                    if command -v dracut &>/dev/null; then
+                        run_cmd "Regenerating initramfs image via dracut" dracut --force || true
+                    fi
+                else
+                    log_success "Nobara Linux detected: NVIDIA proprietary drivers are pre-installed via DKMS & the official 'nobara-nvidia-production' repository."
+                    log_info "Nobara Best Practice: Skipping manual akmod-nvidia installation to prevent fatal transaction conflicts. Use '--rebuild' with '--gaming' if you need to force-repair corrupted Nobara NVIDIA drivers."
+                fi
             elif [[ "$IS_BAZZITE" == true ]]; then
-                log_success "Bazzite detected: Bazzite ships with pre-configured NVIDIA container images. Host driver layering is intentionally skipped."
+                if [[ "$RUN_REINSTALL" == true ]]; then
+                    log_warn "Bazzite manages NVIDIA drivers in its host image; --reinstall/--rebuild cannot reinstall or rebuild the host driver stack."
+                else
+                    log_success "Bazzite detected: Bazzite ships with pre-configured NVIDIA container images. Host driver layering is intentionally skipped."
+                fi
             elif [[ "$IS_STEAMOS" == true ]]; then
                 log_info "SteamOS detected: Valve Linux kernel exclusively targets AMD APU hardware (Steam Deck). Skipping NVIDIA desktop drivers."
             elif [[ "$IS_ATOMIC" == true ]]; then
                 log_info "Fedora Atomic (Silverblue/Kinoite) detected. Layering akmod-nvidia via rpm-ostree..."
+                if [[ "$RUN_REBUILD" == true ]]; then
+                    log_warn "--rebuild will discard the pending rpm-ostree deployment, including unrelated staged changes, before layering the NVIDIA driver packages."
+                    if ! run_cmd "Cleaning pending rpm-ostree deployment" rpm-ostree cleanup --pending; then
+                        log_warn "Could not clean the pending rpm-ostree deployment; continuing with normal idempotent layering."
+                    fi
+                    log_warn "rpm-ostree cannot force-reinstall layered NVIDIA drivers; rebuilding uses normal idempotent layering after pending cleanup."
+                elif [[ "$RUN_REINSTALL" == true ]]; then
+                    log_warn "rpm-ostree cannot force-reinstall layered NVIDIA drivers; --reinstall will only apply normal idempotent layering."
+                fi
                 rpm-ostree install --idempotent akmod-nvidia xorg-x11-drv-nvidia nvidia-settings vulkan-tools || log_warn "rpm-ostree driver layering failed or requires a scheduled reboot."
             elif [[ "$DISTRO_FAMILY" == "arch" ]]; then
                 log_info "Arch Linux detected: Installing nvidia-dkms and utilities via pacman..."
-                pkg_install nvidia-dkms nvidia-utils lib32-nvidia-utils nvidia-settings vulkan-tools || pkg_install nvidia nvidia-utils nvidia-settings vulkan-tools || true
+                if [[ "$RUN_REBUILD" == true ]]; then
+                    arch_nvidia_cmd=(pacman -S --overwrite '*')
+                    if [[ "$AUTO_YES" == "-y" ]]; then arch_nvidia_cmd+=(--noconfirm); fi
+                    arch_nvidia_cmd+=(nvidia-dkms nvidia-utils lib32-nvidia-utils nvidia-settings vulkan-tools)
+                    refresh_package_cache
+                    if ! run_cmd "Reinstalling Arch NVIDIA driver packages with file overwrite enabled" "${arch_nvidia_cmd[@]}"; then
+                        log_warn "DKMS driver package transaction failed; trying the prebuilt NVIDIA driver stack."
+                        arch_nvidia_fallback_cmd=(pacman -S --overwrite '*')
+                        if [[ "$AUTO_YES" == "-y" ]]; then arch_nvidia_fallback_cmd+=(--noconfirm); fi
+                        arch_nvidia_fallback_cmd+=(nvidia nvidia-utils nvidia-settings vulkan-tools)
+                        run_cmd "Reinstalling prebuilt Arch NVIDIA driver packages with file overwrite enabled" "${arch_nvidia_fallback_cmd[@]}" || log_warn "Prebuilt NVIDIA driver package transaction failed."
+                    fi
+                else
+                    pkg_install nvidia-dkms nvidia-utils lib32-nvidia-utils nvidia-settings vulkan-tools || pkg_install nvidia nvidia-utils nvidia-settings vulkan-tools || true
+                fi
+                if [[ "$RUN_REBUILD" == true ]] && command -v mkinitcpio &>/dev/null; then
+                    run_cmd "Regenerating Arch Linux initramfs (mkinitcpio -P)" mkinitcpio -P || true
+                fi
             elif [[ "$DISTRO_FAMILY" == "opensuse" ]]; then
                 log_info "openSUSE detected: Adding official openSUSE NVIDIA repository..."
                 zypper addrepo --refresh https://download.nvidia.com/opensuse/tumbleweed NVIDIA 2>/dev/null || zypper addrepo --refresh https://download.nvidia.com/opensuse/leap/\$releasever NVIDIA 2>/dev/null || true
                 pkg_install x11-video-nvidiaG06 nvidia-glG06 nvidia-computeG06 vulkan-tools || true
+                if [[ "$RUN_REBUILD" == true ]] && command -v dracut &>/dev/null; then
+                    run_cmd "Regenerating openSUSE initramfs via dracut" dracut --force || true
+                fi
             elif [[ "$DISTRO_FAMILY" == "deb" ]]; then
                 if command -v ubuntu-drivers &>/dev/null; then
-                    ubuntu-drivers autoinstall || true
+                    if [[ "$RUN_REINSTALL" == true ]]; then
+                        ubuntu_nvidia_packages=()
+                        mapfile -t ubuntu_nvidia_packages < <(
+                            dpkg-query -W -f='${db:Status-Abbrev} ${binary:Package}\n' \
+                                'nvidia-driver-*' 'nvidia-dkms-*' 'nvidia-kernel-*' \
+                                'nvidia-firmware-*' 'nvidia-utils-*' 'libnvidia-gl-*' \
+                                'libnvidia-compute-*' 'libnvidia-extra-*' 'libnvidia-decode-*' \
+                                'libnvidia-encode-*' 'libnvidia-cfg1-*' 'libnvidia-fbc1-*' \
+                                2>/dev/null | awk '$1 == "ii" { print $2 }'
+                        )
+                        if [[ ${#ubuntu_nvidia_packages[@]} -gt 0 ]]; then
+                            if ! pkg_install "${ubuntu_nvidia_packages[@]}"; then
+                                log_warn "Ubuntu NVIDIA package reinstallation failed."
+                            fi
+                        else
+                            log_warn "No installed Ubuntu NVIDIA driver packages found; using ubuntu-drivers to install the recommended driver."
+                            if ! ubuntu-drivers autoinstall; then
+                                log_warn "ubuntu-drivers could not install the recommended NVIDIA driver."
+                            fi
+                        fi
+                    elif ! ubuntu-drivers autoinstall; then
+                        log_warn "ubuntu-drivers could not install the recommended NVIDIA driver."
+                    fi
                 else
-                    pkg_install nvidia-driver firmware-misc-nonfree nvidia-settings vulkan-tools || true
+                    if ! pkg_install nvidia-driver firmware-misc-nonfree nvidia-settings vulkan-tools; then
+                        log_warn "Debian NVIDIA package installation or reinstallation failed."
+                    fi
+                fi
+                if [[ "$RUN_REBUILD" == true ]]; then
+                    if command -v dkms &>/dev/null; then
+                        run_cmd "Rebuilding installed DKMS modules" dkms autoinstall || log_warn "DKMS module rebuild reported warnings."
+                    fi
+                    if command -v update-initramfs &>/dev/null; then
+                        run_cmd "Regenerating initramfs for installed kernels" update-initramfs -u -k all || log_warn "Initramfs regeneration reported warnings."
+                    fi
                 fi
             else
                 pkg_install akmod-nvidia xorg-x11-drv-nvidia nvidia-settings vulkan-tools || true
+                if [[ "$RUN_REBUILD" == true ]]; then
+                    if command -v akmods &>/dev/null; then
+                        run_cmd "Forcing akmods kernel module rebuild" akmods --force || true
+                    fi
+                    if command -v dracut &>/dev/null; then
+                        run_cmd "Regenerating initramfs via dracut" dracut --force || true
+                    fi
+                fi
             fi
             ;;
         *"AMD"*|*"Advanced Micro Devices"*)
@@ -1450,10 +1636,30 @@ if [[ "$RUN_GAMING" == true ]]; then
                     log_info "Fedora Atomic/Bazzite includes Mesa/RADV drivers in base image."
                     ;;
                 steamos)
-                    log_info "SteamOS native AMD Mesa/RADV driver stack is active."
+                        if [[ "$RUN_REBUILD" == true ]]; then
+                            refresh_package_cache
+                            steamos_unlock
+                            steamos_gpu_cmd=(pacman -S --overwrite '*')
+                            if [[ "$AUTO_YES" == "-y" ]]; then steamos_gpu_cmd+=(--noconfirm); fi
+                            steamos_gpu_cmd+=(mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon vulkan-tools)
+                            if ! run_cmd "Reinstalling SteamOS AMD graphics packages with file overwrite enabled" "${steamos_gpu_cmd[@]}"; then
+                                log_warn "SteamOS AMD graphics package transaction failed."
+                            fi
+                            steamos_lock
+                        else
+                            log_info "SteamOS native AMD Mesa/RADV driver stack is active."
+                        fi
                     ;;
                 arch)
-                    pkg_install mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon vulkan-tools || true
+                    if [[ "$RUN_REBUILD" == true ]]; then
+                        arch_amd_cmd=(pacman -S --overwrite '*')
+                        if [[ "$AUTO_YES" == "-y" ]]; then arch_amd_cmd+=(--noconfirm); fi
+                        arch_amd_cmd+=(mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon vulkan-tools)
+                        refresh_package_cache
+                        run_cmd "Reinstalling Arch AMD graphics packages with file overwrite enabled" "${arch_amd_cmd[@]}" || log_warn "Arch AMD graphics package transaction failed."
+                    else
+                        pkg_install mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon vulkan-tools || true
+                    fi
                     ;;
                 opensuse)
                     pkg_install Mesa Mesa-libva libvulkan_radeon vulkan-tools || true
@@ -1465,6 +1671,9 @@ if [[ "$RUN_GAMING" == true ]]; then
                     pkg_install mesa-vulkan-drivers vulkan-tools vulkan-loader || true
                     ;;
             esac
+            if [[ "$RUN_REBUILD" == true ]] && command -v dracut &>/dev/null && [[ "$IS_ATOMIC" != true ]]; then
+                run_cmd "Regenerating initramfs for AMD Mesa/amdgpu stack" dracut --force || true
+            fi
             ;;
         *)
             log_warn "Unable to detect a supported NVIDIA or AMD GPU. Skipping driver installation."

@@ -7,9 +7,10 @@ Whether you are deploying a completely fresh Linux installation, configuring a d
 ## 📂 Directory Structure
 
 ### 🚀 Provisioning
-* **`Linux-Deployment-Tool.sh`** *(v2.0)*
+* **`Linux-Deployment-Tool.sh`** *(v2.1)*
   * **Purpose:** A highly modular, automated deployment tool for fresh Linux installations.
-  * **Actions:** Uses command-line flags to selectively deploy application stacks (Apps, Dev, Cyber, Maker, Gaming), configure Desktop Environment QoL features, and apply tiered security hardening (including `auditd`, network sysctl drops, and MFA for SSH). It also adapts package management and driver selection to the detected distro family and GPU vendor.
+  * **Actions:** Uses command-line flags to selectively deploy application stacks (Apps, Dev, Cyber, Maker, Gaming), configure Desktop Environment QoL features, and apply tiered security hardening (including `auditd`, network sysctl drops, and MFA for SSH). It adapts package management and driver selection to the detected distro family and GPU vendor, with `--reinstall` and `--rebuild` recovery modes.
+  * **Usage:** See the [Provisioning guide](Provisioning/README.md) and [full command reference](Provisioning/Linux-Deployment-Tool/README.md).
 
 ### 🎮 Gaming
 * **`InstallBaseGamingFedora41+.sh`**

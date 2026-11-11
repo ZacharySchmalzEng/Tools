@@ -20,7 +20,7 @@ The repository is logically segregated by Operating System and functional domain
 * **`/Linux/Networking/`**
   * `FedoraEnableSSH.sh`: Silently installs, configures, and validates the OpenSSH Server daemon. Features idempotency checks, Google Authenticator MFA PAM module enforcement, and automated configuration rollbacks.
 * **`/Linux/Provisioning/`**
-  * `Linux-Deployment-Tool.sh`: A comprehensive, modular deployment script for fresh Linux installations. Features tiered security hardening, MFA SSH integration, distro-aware package management, and GPU-aware driver selection via command-line flags. *(See the dedicated README inside this folder for usage flags).*
+  * `Linux-Deployment-Tool.sh` (v2.1): A comprehensive, modular deployment script for fresh Linux installations. Features tiered security hardening, MFA SSH integration, distro-aware package management, GPU-aware driver selection, and `--reinstall`/`--rebuild` recovery modes. See the [Provisioning guide](Linux/Provisioning/README.md) and [full command reference](Linux/Provisioning/Linux-Deployment-Tool/README.md).
 
 ### 🪟 Windows (Windows 11 Pro)
 
