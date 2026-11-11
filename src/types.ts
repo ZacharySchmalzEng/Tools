@@ -55,6 +55,7 @@ export interface LinuxDeploymentConfig {
   apps: boolean;
   devapps: boolean;
   cyber: boolean;
+  sysadmin: boolean;
   maker: boolean;
   creators: boolean;
   gaming: boolean;

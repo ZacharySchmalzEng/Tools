@@ -49,6 +49,7 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
     apps: true,
     devapps: true,
     cyber: false,
+    sysadmin: false,
     maker: false,
     creators: false,
     gaming: false,
@@ -138,6 +139,7 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
         apps: true,
         devapps: true,
         cyber: false,
+        sysadmin: false,
         maker: false,
         creators: false,
         gaming: false,
@@ -157,6 +159,7 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
         apps: true,
         devapps: true,
         cyber: true,
+        sysadmin: false,
         maker: false,
         creators: false,
         gaming: false,
@@ -176,6 +179,7 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
         apps: true,
         devapps: false,
         cyber: false,
+        sysadmin: false,
         maker: false,
         creators: false,
         gaming: true,
@@ -195,6 +199,7 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
         apps: true,
         devapps: true,
         cyber: true,
+        sysadmin: false,
         maker: true,
         creators: true,
         gaming: false,
@@ -257,6 +262,7 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
       if (linuxConfig.apps) flags.push('--apps');
       if (linuxConfig.devapps) flags.push('--devapps');
       if (linuxConfig.cyber) flags.push('--cyber');
+      if (linuxConfig.sysadmin) flags.push('--sysadmin');
       if (linuxConfig.maker) flags.push('--maker');
       if (linuxConfig.creators) flags.push('--creators');
       if (linuxConfig.gaming) flags.push('--gaming');
@@ -1035,11 +1041,12 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                 {[
                   { key: 'update', flag: '--update', name: 'Sequential Package Update', desc: 'Updates DNF/APT, Flatpak runtimes, and Snap packages sequentially.' },
                   { key: 'apps', flag: '--apps', name: 'System Utilities & Browsers', desc: 'Brave, Chrome, Obsidian, Signal, Timeshift, btop, eza, plocate, VLC, 7zip.' },
-                  { key: 'devapps', flag: '--devapps', name: 'Developer Toolchain', desc: 'Python 3, OpenSSL, VS Code, GitHub Desktop, PowerShell, and Remmina.' },
+                  { key: 'devapps', flag: '--devapps', name: 'Developer Toolchain', desc: 'Git, jq, fzf, tealdeer, rsync, Python 3, OpenSSL, VS Code, and PowerShell.' },
                   { key: 'cyber', flag: '--cyber', name: 'Cybersecurity & Packet Analysis', desc: 'Wireshark (adds user to wireshark group), Nmap, TCPDump, and Ncat.' },
+                  { key: 'sysadmin', flag: '--sysadmin', name: 'System Administration', desc: 'Remmina, tmux, DNS/network diagnostics, disk observability, and process tracing.' },
                   { key: 'maker', flag: '--maker', name: '3D Printing & CAD Slicers', desc: 'PrusaSlicer, OrcaSlicer, and Bambu Studio.' },
-                  { key: 'creators', flag: '--creators', name: 'Creative Production Stack', desc: 'Blender, Darktable, Audacity, Inkscape, and OBS Studio.' },
-                  { key: 'gaming', flag: '--gaming', name: 'Gaming Runtimes & Drivers', desc: 'Steam, Lutris, Bottles, and auto-detects/installs NVIDIA or AMD driver stack.' },
+                  { key: 'creators', flag: '--creators', name: 'Creative Production Stack', desc: 'GIMP, Krita, Blender, Audacity, Inkscape, and OBS Studio.' },
+                  { key: 'gaming', flag: '--gaming', name: 'Gaming Runtimes & Drivers', desc: 'Steam, Lutris, GameMode, MangoHud, and auto-detected GPU drivers.' },
                   { key: 'ssh', flag: '--ssh', name: 'OpenSSH Daemon Provisioning', desc: 'Installs, starts, and validates the OpenSSH systemd service with socket tests.' },
                   { key: 'discord', flag: '--discord', name: 'Native Discord Transition', desc: 'Silently removes Flatpak Discord and installs native RPM / DEB package.' },
                 ].map(item => {

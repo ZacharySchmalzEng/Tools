@@ -57,6 +57,7 @@ sudo ./Linux-Deployment-Tool.sh --all --steamos                     # Force Stea
 sudo ./Linux-Deployment-Tool.sh --all --opensuse                    # Force openSUSE (Packman repos & Zypper)
 sudo ./Linux-Deployment-Tool.sh --all --arch                        # Force Arch Linux (Pacman & multilib)
 sudo ./Linux-Deployment-Tool.sh --all --2fa --unattended            # Hands-free deployment with MFA SSH
+sudo ./Linux-Deployment-Tool.sh --sysadmin --unattended             # Install the operations and diagnostics toolkit
 sudo ./Linux-Deployment-Tool.sh --gaming --reinstall -y            # Reinstall selected gaming and driver packages
 sudo ./Linux-Deployment-Tool.sh --gaming --rebuild -y              # Reinstall and rebuild supported driver modules/initramfs
 sudo ./Linux-Deployment-Tool.sh --update --harden-advanced --debug  # Update, strict harden, and trace commands
@@ -69,11 +70,12 @@ sudo ./Linux-Deployment-Tool.sh --all -d                            # Dry-run: R
 | :--- | :--- |
 | `--update` | Sequentially upgrades package manager (DNF, rpm-ostree, Pacman, Zypper, APT), Flatpak, and Snap packages. |
 | `--apps` | **System & Utilities:** Browsers (Brave, Chrome), Obsidian, Signal, Timeshift, btop, eza, plocate, and DE-specific tools (baobab/filelight). |
-| `--devapps` | **Development Stack:** Python 3, OpenSSL, VS Code, GitHub Desktop, Microsoft PowerShell (pwsh via official repos / Flathub fallback), and Remmina. |
+| `--devapps` | **Development Stack:** Git, jq, fzf, tealdeer, rsync, Python 3, OpenSSL, VS Code, and Microsoft PowerShell (pwsh via official repos / Flathub fallback). |
 | `--cyber` | **Security Analysis:** Wireshark (adds user to group), Nmap, TCPDump, and Ncat. |
+| `--sysadmin` | **System Administration:** Remmina, tmux, Wireshark, Nmap, TCPDump, DNS/network diagnostics (dig, mtr, iperf3), system/disk observability (sysstat, iotop, ncdu, smartmontools), and process tracing (lsof, strace). |
 | `--maker` | **3D Printing:** PrusaSlicer, OrcaSlicer, and Bambu Studio. |
-| `--creators` | **Creative Suite:** Blender, Darktable, Audacity, Inkscape, and OBS Studio. |
-| `--gaming` | **Gaming & Drivers:** Configures the appropriate package sources (RPM Fusion, Packman, Multilib), installs Steam/Lutris/Bottles, and auto-detects/installs GPU driver stacks with Nobara safeguards. |
+| `--creators` | **Creative Suite:** GIMP, Krita, Blender, Audacity, Inkscape, and OBS Studio. |
+| `--gaming` | **Gaming & Drivers:** Configures the appropriate package sources (RPM Fusion, Packman, Multilib), installs Steam/Lutris/Bottles, GameMode, MangoHud, and auto-detects/installs GPU driver stacks with Nobara safeguards. |
 | `--ssh` | Installs, enables, and verifies the OpenSSH daemon. |
 | `--discord` | Configures Discord (Native RPM on standard Fedora; sandboxed Flatpak on Atomic and SteamOS). |
 
@@ -97,7 +99,7 @@ sudo ./Linux-Deployment-Tool.sh --all -d                            # Dry-run: R
 ### Global Modifiers
 | Flag | Description |
 | :--- | :--- |
-| `--all` | Executes all standard modules. *(Note: Intentionally excludes `--harden-advanced` and `--2fa` to prevent accidental lockouts).* |
+| `--all` | Executes all standard modules, including `--sysadmin`. *(Note: Intentionally excludes `--harden-advanced` and `--2fa` to prevent accidental lockouts).* |
 | `--reinstall` | Reinstalls packages selected by other modules using native package-manager operations. Can be combined with module flags such as `--gaming`; Flatpak apps are reinstalled when selected. |
 | `--rebuild` | Includes `--reinstall` and rebuilds supported DKMS/akmods modules and initramfs images. It does not bypass package-manager locks. On Arch Linux and SteamOS, Pacman's `--overwrite '*'` is limited to explicit GPU-driver package transactions; use this mode only when repairing those drivers. On Fedora Atomic, `--gaming --rebuild` clears the pending rpm-ostree deployment, including unrelated staged changes, before normal idempotent NVIDIA layering; it cannot force-reinstall host-image drivers. Bazzite does not support host-image NVIDIA driver rebuilds. |
 | `-y` | Auto-install (answers yes to all package manager prompts). |

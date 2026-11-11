@@ -124,10 +124,16 @@ readonly COLOR_WARN='\e[33m'
 readonly COLOR_ERROR='\e[31m'
 readonly COLOR_RESET='\e[0m'
 readonly DNF_RETRY_OPTIONS=(--setopt=retries=10 --setopt=timeout=60)
+readonly SSHD_CONF="/etc/ssh/sshd_config"
+readonly PAM_CONF="/etc/pam.d/sshd"
 
+# Print informational progress in cyan.
 log_info()    { echo -e "${COLOR_INFO}[INFO] $1${COLOR_RESET}"; }
+# Print successful completion messages in green.
 log_success() { echo -e "${COLOR_SUCCESS}[+] $1${COLOR_RESET}"; }
+# Print non-fatal issues in yellow.
 log_warn()    { echo -e "${COLOR_WARN}[!] $1${COLOR_RESET}"; }
+# Print errors to stderr in red.
 log_error()   { echo -e "${COLOR_ERROR}[ERROR] $1${COLOR_RESET}" >&2; }
 
 # Global State Flags for Signal & Error Restoration
@@ -135,6 +141,7 @@ IS_STEAMOS_UNLOCKED=false
 CACHE_REFRESHED=false
 declare -a TEMP_CLEANUP_DIRS=()
 
+# Restore SteamOS read-only protection and remove temporary directories on exit or signal.
 cleanup_handler() {
     local exit_code=$?
     trap - EXIT INT TERM HUP
@@ -164,6 +171,7 @@ cleanup_handler() {
 trap cleanup_handler EXIT INT TERM HUP
 trap 'handle_error $? $LINENO' ERR
 
+# Report the failing command's source line without replacing normal error handling.
 handle_error() {
     local exit_code="${1:-0}"
     local line_number="${2:-unknown}"
@@ -172,6 +180,7 @@ handle_error() {
     fi
 }
 
+# Log a description, then execute the supplied command and arguments.
 run_cmd() {
     local description="$1"
     shift
@@ -188,6 +197,7 @@ IS_BAZZITE=false
 IS_STEAMOS=false
 DISTRO_OVERRIDE=""
 
+# Temporarily unlock SteamOS and initialize its pacman keyring when needed.
 steamos_unlock() {
     if [[ "$IS_STEAMOS" == true ]] && command -v steamos-readonly &>/dev/null; then
         log_info "SteamOS: Temporarily unlocking immutable root (steamos-readonly disable)..."
@@ -201,6 +211,7 @@ steamos_unlock() {
     fi
 }
 
+# Re-enable SteamOS read-only protection after a package operation.
 steamos_lock() {
     if [[ "$IS_STEAMOS" == true ]] && command -v steamos-readonly &>/dev/null; then
         log_info "SteamOS: Restoring immutable root integrity (steamos-readonly enable)..."
@@ -209,6 +220,7 @@ steamos_lock() {
     fi
 }
 
+# Select the package-manager family from an override or operating-system metadata.
 detect_distro() {
     local distro_id=""
     local distro_like=""
@@ -365,6 +377,7 @@ detect_distro() {
     SSH_SERVICE="sshd"
 }
 
+# Refresh repository metadata once per run, with SteamOS locking around pacman access.
 refresh_package_cache() {
     local force="${1:-false}"
     if [[ "$CACHE_REFRESHED" == true && "$force" != "force" ]]; then
@@ -409,6 +422,7 @@ refresh_package_cache() {
     CACHE_REFRESHED=true
 }
 
+# Translate shared package names to distro-specific package identifiers.
 resolve_package_name() {
     local package="$1"
     case "$DISTRO_FAMILY" in
@@ -426,13 +440,14 @@ resolve_package_name() {
                 plocate) echo "plocate" ;;
                 mediawriter) echo "gnome-multi-writer" ;;
                 p7zip-plugins) echo "p7zip-full" ;;
+                bind-utils) echo "dnsutils" ;;
+                mtr) echo "mtr-tiny" ;;
                 vlc) echo "vlc" ;;
                 timeshift) echo "timeshift" ;;
                 remmina) echo "remmina" ;;
                 wireshark-qt) echo "wireshark" ;;
                 nmap-ncat) echo "netcat" ;;
                 prusa-slicer) echo "prusa-slicer" ;;
-                darktable) echo "darktable" ;;
                 blender) echo "blender" ;;
                 audacity) echo "audacity" ;;
                 inkscape) echo "inkscape" ;;
@@ -450,6 +465,7 @@ resolve_package_name() {
         arch|steamos)
             case "$package" in
                 p7zip-plugins) echo "p7zip" ;;
+                bind-utils) echo "bind" ;;
                 wireshark-qt) echo "wireshark-qt" ;;
                 nmap-ncat) echo "nmap" ;;
                 openssh-server) echo "openssh" ;;
@@ -478,6 +494,7 @@ resolve_package_name() {
     esac
 }
 
+# Route package installation or reinstall requests through the active distro manager.
 pkg_install() {
     local packages=("$@")
     if [[ ${#packages[@]} -eq 0 ]]; then
@@ -608,6 +625,7 @@ pkg_install() {
     esac
 }
 
+# Apply system upgrades using the detected package manager and recovery options.
 update_system() {
     case "$DISTRO_FAMILY" in
         rpm)
@@ -650,7 +668,7 @@ update_system() {
             export DEBIAN_FRONTEND=noninteractive
             local deb_update=(apt-get)
             if [[ "$AUTO_YES" == "-y" ]]; then deb_update+=(--yes); fi
-            deb_update+=(upgrade)
+            deb_update+=(full-upgrade)
             if [[ -n "$DOWNLOAD_ONLY" ]]; then deb_update+=("$DOWNLOAD_ONLY"); fi
             refresh_package_cache
             run_cmd "Updating Debian/Ubuntu packages via APT" "${deb_update[@]}" || log_warn "APT update failed."
@@ -662,6 +680,7 @@ update_system() {
     esac
 }
 
+# Install Flatpak when needed and register Flathub for application installs.
 ensure_flatpak() {
     if ! command -v flatpak &>/dev/null; then
         log_info "Flatpak not found on system. Automatically installing Flatpak support..."
@@ -696,6 +715,7 @@ ensure_flatpak() {
     fi
 }
 
+# Install a Flathub app, optionally trying a legacy app ID if the primary ID is unavailable.
 install_flatpak_app() {
     local app="$1"
     local fallback="${2:-}"
@@ -716,6 +736,7 @@ install_flatpak_app() {
     fi
 }
 
+# Enable a systemd service immediately, falling back to enable-only if startup fails.
 service_enable() {
     local service_name="$1"
     if ! run_cmd "Enabling service: $service_name" systemctl enable --now "$service_name"; then
@@ -723,11 +744,163 @@ service_enable() {
     fi
 }
 
+# Restart a systemd service without aborting provisioning if it is unavailable.
 service_restart() {
     local service_name="$1"
     systemctl restart "$service_name" 2>/dev/null || true
 }
 
+# Replace an existing INI-style setting or append it when the file has no matching key.
+set_ini_option() {
+    local config_file="$1"
+    local key="$2"
+    local value="$3"
+    local separator=" = "
+
+    if [[ ! -f "$config_file" ]]; then
+        return 0
+    fi
+
+    if [[ "$config_file" == "/etc/selinux/config" ]]; then
+        separator="="
+    fi
+
+    if grep -Eq "^[[:space:]]*#?[[:space:]]*${key}[[:space:]]*=" "$config_file"; then
+        sed -i -E "s|^[[:space:]]*#?[[:space:]]*${key}[[:space:]]*=.*|${key}${separator}${value}|" "$config_file"
+    else
+        printf '%s%s%s\n' "$key" "$separator" "$value" >> "$config_file"
+    fi
+}
+
+# Set a global sshd option once and insert missing options before any Match block.
+set_sshd_option() {
+    local config_file="$1"
+    local option="$2"
+    local value="$3"
+    local tmp_file
+
+    if [[ ! -f "$config_file" ]]; then
+        return 0
+    fi
+
+    tmp_file=$(mktemp "${config_file}.XXXXXX")
+    TEMP_CLEANUP_DIRS+=("$tmp_file")
+
+    awk -v opt="$option" -v val="$value" '
+        BEGIN {
+            done = 0
+            in_match = 0
+            opt_lower = tolower(opt)
+        }
+        /^[[:space:]]*[Mm][Aa][Tt][Cc][Hh]([[:space:]]|$)/ {
+            if (!done) {
+                print opt " " val
+                done = 1
+            }
+            in_match = 1
+        }
+        {
+            if (!in_match) {
+                line = $0
+                sub(/^[[:space:]]*#?[[:space:]]*/, "", line)
+                split(line, parts, /[[:space:]]+/)
+                if (tolower(parts[1]) == opt_lower) {
+                    if (!done) {
+                        print opt " " val
+                        done = 1
+                    }
+                    next
+                }
+            }
+            print $0
+        }
+        END {
+            if (!done) {
+                print opt " " val
+            }
+        }
+    ' "$config_file" > "$tmp_file"
+
+    chmod --reference="$config_file" "$tmp_file" 2>/dev/null || chmod 0600 "$tmp_file"
+    mv -f "$tmp_file" "$config_file"
+}
+
+# Enable the multilib section and its Include directive without touching adjacent commented sections.
+enable_multilib_repository() {
+    local config_file="${1:-/etc/pacman.conf}"
+    local tmp_file
+
+    if [[ ! -f "$config_file" ]]; then
+        return 0
+    fi
+
+    if ! grep -Eq '^[[:space:]]*#?[[:space:]]*\[multilib\][[:space:]]*$' "$config_file"; then
+        printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> "$config_file"
+        chmod 0644 "$config_file" 2>/dev/null || true
+        return 0
+    fi
+
+    tmp_file=$(mktemp "${config_file}.XXXXXX")
+    TEMP_CLEANUP_DIRS+=("$tmp_file")
+
+    awk '
+        BEGIN {
+            in_multilib = 0
+            inc_done = 0
+        }
+        /^[[:space:]]*#?[[:space:]]*\[multilib\][[:space:]]*$/ {
+            print "[multilib]"
+            in_multilib = 1
+            next
+        }
+        /^[[:space:]]*#?[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+            if (in_multilib && !inc_done) {
+                print "Include = /etc/pacman.d/mirrorlist"
+                inc_done = 1
+            }
+            in_multilib = 0
+        }
+        {
+            if (in_multilib && $0 ~ /^[[:space:]]*#?[[:space:]]*Include[[:space:]]*=/) {
+                sub(/^[[:space:]]*#[[:space:]]*/, "")
+                print $0
+                inc_done = 1
+                next
+            }
+            print $0
+        }
+        END {
+            if (in_multilib && !inc_done) {
+                print "Include = /etc/pacman.d/mirrorlist"
+            }
+        }
+    ' "$config_file" > "$tmp_file"
+
+    chmod --reference="$config_file" "$tmp_file" 2>/dev/null || chmod 0644 "$tmp_file"
+    mv -f "$tmp_file" "$config_file"
+}
+
+# Display prompts on the controlling terminal instead of the asynchronous transcript pipe.
+prompt_tty() {
+    local prompt="$1"
+    local response_variable="$2"
+    local single_character="${3:-false}"
+
+    if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
+        log_error "An interactive prompt requires a controlling terminal."
+        return 1
+    fi
+
+    printf '%s' "$prompt" > /dev/tty
+    if [[ "$single_character" == true ]]; then
+        IFS= read -r -n 1 "$response_variable" < /dev/tty
+        printf '\n' > /dev/tty
+    else
+        IFS= read -r "$response_variable" < /dev/tty
+    fi
+}
+
+# Detect and install utilities required by later provisioning routines.
 bootstrap_prerequisites() {
     log_info "Checking and auto-bootstrapping required system dependencies..."
     local missing_pkgs=()
@@ -800,6 +973,7 @@ bootstrap_prerequisites() {
     fi
 }
 
+# Install Microsoft PowerShell from vendor repositories, with a Flathub fallback.
 install_powershell() {
     if command -v pwsh &>/dev/null && [[ "$RUN_REINSTALL" != true ]]; then
         log_success "Microsoft PowerShell (pwsh) is already installed."
@@ -843,8 +1017,10 @@ install_powershell() {
             if ! dpkg -s powershell &>/dev/null 2>&1 || [[ "$RUN_REINSTALL" == true ]]; then
                 export DEBIAN_FRONTEND=noninteractive
                 curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg 2>/dev/null || true
+                chmod 0644 /etc/apt/trusted.gpg.d/microsoft.gpg 2>/dev/null || true
                 local deb_ver="${VERSION_ID:-22.04}"
                 echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-${deb_ver}-prod ${UBUNTU_CODENAME:-jammy} main" > /etc/apt/sources.list.d/microsoft-prod.list 2>/dev/null || true
+                chmod 0644 /etc/apt/sources.list.d/microsoft-prod.list 2>/dev/null || true
                 CACHE_REFRESHED=false
                 if ! pkg_install powershell; then
                     log_warn "Native DEB PowerShell failed; falling back to Flathub package..."
@@ -858,6 +1034,7 @@ install_powershell() {
     esac
 }
 
+# Display supported module flags, distro overrides, and global modifiers.
 print_usage() {
     echo -e "\n==============================================================="
     echo -e " Linux Provisioning & Deployment Environment Setup Script"
@@ -868,11 +1045,12 @@ print_usage() {
     echo "MODULE OPTIONS:"
     echo "  --update            Sequentially upgrades package manager, Flatpak, and Snap"
     echo "  --apps              Installs core utilities (Browsers, Media, Search)"
-    echo "  --devapps           Installs Dev tools (VS Code, Python, GitHub Desktop, PowerShell)"
+    echo "  --devapps           Installs Dev tools (Git, jq, fzf, tealdeer, rsync, VS Code, Python, PowerShell)"
     echo "  --cyber             Installs Security tools (Wireshark, Nmap, TCPDump)"
+    echo "  --sysadmin          Installs Sysadmin tools (Remmina, tmux, networking, disk and process diagnostics)"
     echo "  --maker             Installs 3D Printing Slicers (Prusa, Orca, Bambu)"
-    echo "  --creators          Installs Creative suite (Blender, Darktable, OBS)"
-    echo "  --gaming            Configures Steam, Lutris, Winetricks, Repos, GPU Drivers"
+    echo "  --creators          Installs Creative suite (GIMP, Krita, Blender, OBS)"
+    echo "  --gaming            Configures Steam, Lutris, GameMode, MangoHud, Repos, GPU Drivers"
     echo "  --ssh               Installs, enables, and verifies OpenSSH Server"
     echo "  --discord           Configures Discord (Native RPM on standard, Flatpak on Atomic/SteamOS)"
     echo ""
@@ -912,12 +1090,14 @@ print_usage() {
 
 # ------------------------------------------------------------------------------
 # 3. PARAMETER PARSING
+# Translate CLI options into module flags before any system changes begin.
 # ------------------------------------------------------------------------------
 RUN_ALL=false
 RUN_UPDATE=false
 RUN_APPS=false
 RUN_DEVAPPS=false
 RUN_CYBER=false
+RUN_SYSADMIN=false
 RUN_MAKER=false
 RUN_CREATORS=false
 RUN_GAMING=false
@@ -930,6 +1110,7 @@ RUN_DEBUG=false
 UNATTENDED=false
 AUTO_YES=""
 DOWNLOAD_ONLY=""
+DOWNLOAD_ONLY_REQUESTED=false
 RUN_REINSTALL=false
 RUN_REBUILD=false
 
@@ -945,6 +1126,7 @@ while [[ "$#" -gt 0 ]]; do
         --apps) RUN_APPS=true ;;
         --devapps) RUN_DEVAPPS=true ;;
         --cyber) RUN_CYBER=true ;;
+        --sysadmin) RUN_SYSADMIN=true ;;
         --maker) RUN_MAKER=true ;;
         --creators) RUN_CREATORS=true ;;
         --gaming) RUN_GAMING=true ;;
@@ -992,7 +1174,7 @@ while [[ "$#" -gt 0 ]]; do
             esac
             ;;
         -y) AUTO_YES="-y" ;;
-        -d) if [[ "$DISTRO_FAMILY" == "deb" ]]; then DOWNLOAD_ONLY="--download-only"; else DOWNLOAD_ONLY="--downloadonly"; fi ;;
+        -d) DOWNLOAD_ONLY_REQUESTED=true ;;
         --help|-h) print_usage; exit 0 ;;
         *) log_error "Unknown parameter passed: $1"; print_usage; exit 1 ;;
     esac
@@ -1001,8 +1183,16 @@ done
 
 detect_distro
 
+if [[ "$DOWNLOAD_ONLY_REQUESTED" == true ]]; then
+    if [[ "$DISTRO_FAMILY" == "deb" ]]; then
+        DOWNLOAD_ONLY="--download-only"
+    else
+        DOWNLOAD_ONLY="--downloadonly"
+    fi
+fi
+
 if [[ "$RUN_ALL" == true ]]; then
-    RUN_UPDATE=true; RUN_APPS=true; RUN_DEVAPPS=true; RUN_CYBER=true;
+    RUN_UPDATE=true; RUN_APPS=true; RUN_DEVAPPS=true; RUN_CYBER=true; RUN_SYSADMIN=true;
     RUN_MAKER=true; RUN_CREATORS=true; RUN_GAMING=true; RUN_SSH=true;
     RUN_DISCORD=true; RUN_HARDEN=true;
 fi
@@ -1013,6 +1203,7 @@ fi
 
 # ------------------------------------------------------------------------------
 # 4. PRE-FLIGHT CHECKS & LOGGING SETUP
+# Verify elevation, create a private transcript, and bootstrap required utilities.
 # ------------------------------------------------------------------------------
 if [[ "$EUID" -ne 0 ]]; then
     log_error "Administrator permissions are required. Please run with sudo."
@@ -1049,6 +1240,7 @@ bootstrap_prerequisites
 
 # ------------------------------------------------------------------------------
 # 5. INTERACTIVE PROMPTS & DESKTOP ENVIRONMENT CONFIGURATION
+# Resolve the desktop target and acknowledge advanced SSH changes before provisioning.
 # ------------------------------------------------------------------------------
 # Check for environment auto-detection if not explicitly passed via flag
 if [[ -z "${DESKTOP_ENV:-}" ]]; then
@@ -1070,7 +1262,7 @@ elif [[ "$UNATTENDED" == true ]]; then
 else
     echo -e "\n\e[36m=== Desktop Environment Configuration ===\e[0m"
     while true; do
-        read -p "Select Desktop Environment ([g]nome / [k]de / [c]osmic / [x]fce / c[i]nnamon): " de_choice
+        prompt_tty "Select Desktop Environment ([g]nome / [k]de / [c]osmic / [x]fce / c[i]nnamon): " de_choice
         case "${de_choice,,}" in
             g|gnome) DESKTOP_ENV="GNOME"; break ;;
             k|kde|plasma) DESKTOP_ENV="KDE"; break ;;
@@ -1085,13 +1277,14 @@ fi
 if [[ "$RUN_HARDEN_ADV" == true && "$UNATTENDED" != true ]]; then
     echo -e "\n\e[31m[!] WARNING: Advanced hardening will disable SSH password authentication."
     echo -e "    Ensure you have an SSH Key provisioned before disconnecting.\e[0m"
-    read -p "    Press Enter to acknowledge and continue..."
+    prompt_tty "    Press Enter to acknowledge and continue..." acknowledged
 fi
 
 
 # ==============================================================================
 # MODULE: UPDATE & MAINTENANCE
 # ==============================================================================
+# Upgrade native packages and available Flatpak/Snap applications.
 if [[ "$RUN_UPDATE" == true ]]; then
     echo -e "\n\e[35m[========== STARTING UPDATE MODULE ==========]\e[0m"
     log_info "Running system package updates..."
@@ -1114,6 +1307,7 @@ fi
 # ==============================================================================
 # MODULE: APPS & SYSTEM QoL
 # ==============================================================================
+# Install common utilities, desktop-specific tools, and selected Flatpak applications.
 if [[ "$RUN_APPS" == true ]]; then
     echo -e "\n\e[35m[========== STARTING APPS & QoL MODULE ==========]\e[0m"
     readonly QOL_APPS=(timeshift btop bat eza plocate mediawriter p7zip p7zip-plugins vlc)
@@ -1173,9 +1367,10 @@ fi
 # ==============================================================================
 # MODULE: DEV APPS
 # ==============================================================================
+# Install baseline development CLIs, Python/OpenSSL, PowerShell, and VS Code.
 if [[ "$RUN_DEVAPPS" == true ]]; then
     echo -e "\n\e[35m[========== STARTING DEV APPS MODULE ==========]\e[0m"
-    if ! pkg_install python3 openssl remmina; then
+    if ! pkg_install python3 openssl git jq fzf tealdeer rsync; then
         log_warn "Some development packages could not be installed. Continuing..."
     fi
 
@@ -1183,24 +1378,45 @@ if [[ "$RUN_DEVAPPS" == true ]]; then
     install_powershell
 
     ensure_flatpak
-    readonly DEV_FLATPAKS=(com.visualstudio.code io.github.shiftey.Desktop)
+    readonly DEV_FLATPAKS=(com.visualstudio.code)
     for app in "${DEV_FLATPAKS[@]}"; do
         install_flatpak_app "$app"
     done
     log_success "Dev Apps module complete."
 fi
 
-# ==============================================================================
-# MODULE: CYBERSECURITY
-# ==============================================================================
-if [[ "$RUN_CYBER" == true ]]; then
-    echo -e "\n\e[35m[========== STARTING CYBER MODULE ==========]\e[0m"
-    readonly CYBER_PKGS=(wireshark-qt nmap tcpdump nmap-ncat)
-    if ! pkg_install "${CYBER_PKGS[@]}"; then
-        log_warn "Some cybersecurity packages could not be installed. Continuing..."
+# ============================================================================
+# MODULE: SYSTEM ADMINISTRATION
+# ============================================================================
+# Install remote-access, session, network, storage, and process diagnostics tools.
+if [[ "$RUN_SYSADMIN" == true ]]; then
+    echo -e "\n\e[35m[========== STARTING SYSADMIN MODULE ==========]\e[0m"
+    readonly SYSADMIN_PKGS=(remmina tmux wireshark-qt nmap tcpdump nmap-ncat bind-utils mtr iperf3 sysstat iotop ncdu smartmontools lsof strace)
+    if ! pkg_install "${SYSADMIN_PKGS[@]}"; then
+        log_warn "Some sysadmin packages could not be installed. Continuing..."
     fi
     if [[ -n "${SUDO_USER:-}" ]] && getent group wireshark &>/dev/null; then
         usermod -aG wireshark "$SUDO_USER" || true
+    fi
+    log_success "Sysadmin module complete."
+fi
+
+# ==============================================================================
+# MODULE: CYBERSECURITY
+# ==============================================================================
+# Install packet-analysis tools unless sysadmin already covers them in this run.
+if [[ "$RUN_CYBER" == true ]]; then
+    echo -e "\n\e[35m[========== STARTING CYBER MODULE ==========]\e[0m"
+    if [[ "$RUN_SYSADMIN" == true ]]; then
+        log_info "Cybersecurity diagnostics are already included in the sysadmin package set."
+    else
+        readonly CYBER_PKGS=(wireshark-qt nmap tcpdump nmap-ncat)
+        if ! pkg_install "${CYBER_PKGS[@]}"; then
+            log_warn "Some cybersecurity packages could not be installed. Continuing..."
+        fi
+        if [[ -n "${SUDO_USER:-}" ]] && getent group wireshark &>/dev/null; then
+            usermod -aG wireshark "$SUDO_USER" || true
+        fi
     fi
     log_success "Cyber module complete."
 fi
@@ -1208,6 +1424,7 @@ fi
 # ==============================================================================
 # MODULE: MAKER & CREATORS
 # ==============================================================================
+# Install the 3D slicer stack and selected creative-production applications.
 if [[ "$RUN_MAKER" == true ]]; then
     echo -e "\n\e[35m[========== STARTING MAKER MODULE ==========]\e[0m"
     if ! pkg_install prusa-slicer; then
@@ -1220,9 +1437,10 @@ if [[ "$RUN_MAKER" == true ]]; then
     log_success "Maker module complete."
 fi
 
+# Add raster editing, painting, 3D, audio, vector, and video-production tools.
 if [[ "$RUN_CREATORS" == true ]]; then
     echo -e "\n\e[35m[========== STARTING CREATORS MODULE ==========]\e[0m"
-    readonly CREATOR_PKGS=(darktable blender audacity inkscape obs-studio)
+    readonly CREATOR_PKGS=(gimp krita blender audacity inkscape obs-studio)
     if ! pkg_install "${CREATOR_PKGS[@]}"; then
         log_warn "Some creator packages could not be installed. Continuing..."
     fi
@@ -1232,6 +1450,7 @@ fi
 # ==============================================================================
 # MODULE: STANDARD HARDENING (--harden)
 # ==============================================================================
+# Apply baseline MAC policy, unattended patching, and OpenSSH configuration safeguards.
 if [[ "$RUN_HARDEN" == true ]]; then
     echo -e "\n\e[35m[========== STARTING STANDARD HARDENING ==========]\e[0m"
 
@@ -1239,7 +1458,7 @@ if [[ "$RUN_HARDEN" == true ]]; then
         log_info "Verifying SELinux Enforcement..."
         if command -v setenforce &> /dev/null; then
             setenforce 1 || true
-            sed -i -E 's/^SELINUX=.*/SELINUX=enforcing/' /etc/selinux/config 2>/dev/null || true
+            set_ini_option /etc/selinux/config SELINUX enforcing
             log_success "SELinux verified/set to Enforcing."
         fi
     elif [[ "$DISTRO_FAMILY" == "opensuse" || "$DISTRO_FAMILY" == "deb" ]]; then
@@ -1258,6 +1477,7 @@ if [[ "$RUN_HARDEN" == true ]]; then
             pkg_install dnf-automatic 2>/dev/null || pkg_install dnf5-plugin-automatic 2>/dev/null || true
             dnf_auto_conf="/etc/dnf/automatic.conf"
             mkdir -p /etc/dnf
+            chmod 0755 /etc/dnf 2>/dev/null || true
             if [[ ! -f "$dnf_auto_conf" ]]; then
                 log_info "Creating default security configuration: $dnf_auto_conf"
                 cat <<'EOF' > "$dnf_auto_conf"
@@ -1274,10 +1494,11 @@ upgrade_type = security
 download_updates = yes
 apply_updates = yes
 EOF
+                chmod 0644 "$dnf_auto_conf" 2>/dev/null || true
             else
-                sed -i -E 's/^#?upgrade_type =.*/upgrade_type = security/' "$dnf_auto_conf" 2>/dev/null || echo "upgrade_type = security" >> "$dnf_auto_conf"
-                sed -i -E 's/^#?download_updates =.*/download_updates = yes/' "$dnf_auto_conf" 2>/dev/null || echo "download_updates = yes" >> "$dnf_auto_conf"
-                sed -i -E 's/^#?apply_updates =.*/apply_updates = yes/' "$dnf_auto_conf" 2>/dev/null || echo "apply_updates = yes" >> "$dnf_auto_conf"
+                set_ini_option "$dnf_auto_conf" upgrade_type security
+                set_ini_option "$dnf_auto_conf" download_updates yes
+                set_ini_option "$dnf_auto_conf" apply_updates yes
             fi
             service_enable dnf-automatic.timer 2>/dev/null || service_enable dnf5-automatic.timer 2>/dev/null || true
         fi
@@ -1291,6 +1512,7 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
+        chmod 0644 /etc/apt/apt.conf.d/20auto-upgrades 2>/dev/null || true
         service_enable unattended-upgrades
     else
         log_info "Automatic patching skipped for $DISTRO_NAME (manual scheduling recommended)."
@@ -1299,18 +1521,17 @@ EOF
 
     if dpkg -s openssh-server &> /dev/null 2>&1 || rpm -q openssh-server &> /dev/null 2>&1 || command -v sshd &>/dev/null; then
         log_info "Applying CIS Benchmark Baseline & CVE-2024-6387 (regreSSHion) Mitigation..."
-        readonly SSHD_CONF="/etc/ssh/sshd_config"
-        sed -i -E 's/^#?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONF"
+        set_sshd_option "$SSHD_CONF" PermitRootLogin no
         # CVE-2024-6387 (regreSSHion): reduce grace time from 120s to 20s to neutralize race condition window
-        sed -i -E 's/^#?LoginGraceTime.*/LoginGraceTime 20/' "$SSHD_CONF" 2>/dev/null || echo "LoginGraceTime 20" >> "$SSHD_CONF"
-        sed -i -E 's/^#?MaxAuthTries.*/MaxAuthTries 3/' "$SSHD_CONF" 2>/dev/null || echo "MaxAuthTries 3" >> "$SSHD_CONF"
-        sed -i -E 's/^#?MaxSessions.*/MaxSessions 4/' "$SSHD_CONF" 2>/dev/null || echo "MaxSessions 4" >> "$SSHD_CONF"
-        sed -i -E 's/^#?MaxStartups.*/MaxStartups 10:30:60/' "$SSHD_CONF" 2>/dev/null || echo "MaxStartups 10:30:60" >> "$SSHD_CONF"
-        sed -i -E 's/^#?ClientAliveInterval.*/ClientAliveInterval 300/' "$SSHD_CONF" 2>/dev/null || echo "ClientAliveInterval 300" >> "$SSHD_CONF"
-        sed -i -E 's/^#?ClientAliveCountMax.*/ClientAliveCountMax 2/' "$SSHD_CONF" 2>/dev/null || echo "ClientAliveCountMax 2" >> "$SSHD_CONF"
-        sed -i -E 's/^#?PermitEmptyPasswords.*/PermitEmptyPasswords no/' "$SSHD_CONF" 2>/dev/null || echo "PermitEmptyPasswords no" >> "$SSHD_CONF"
-        sed -i -E 's/^#?IgnoreRhosts.*/IgnoreRhosts yes/' "$SSHD_CONF" 2>/dev/null || echo "IgnoreRhosts yes" >> "$SSHD_CONF"
-        sed -i -E 's/^#?HostbasedAuthentication.*/HostbasedAuthentication no/' "$SSHD_CONF" 2>/dev/null || echo "HostbasedAuthentication no" >> "$SSHD_CONF"
+        set_sshd_option "$SSHD_CONF" LoginGraceTime 20
+        set_sshd_option "$SSHD_CONF" MaxAuthTries 3
+        set_sshd_option "$SSHD_CONF" MaxSessions 4
+        set_sshd_option "$SSHD_CONF" MaxStartups 10:30:60
+        set_sshd_option "$SSHD_CONF" ClientAliveInterval 300
+        set_sshd_option "$SSHD_CONF" ClientAliveCountMax 2
+        set_sshd_option "$SSHD_CONF" PermitEmptyPasswords no
+        set_sshd_option "$SSHD_CONF" IgnoreRhosts yes
+        set_sshd_option "$SSHD_CONF" HostbasedAuthentication no
         service_restart "$SSH_SERVICE"
         log_success "Direct root login disabled, LoginGraceTime tuned to 20s (regreSSHion defense), and CIS limits enforced."
     fi
@@ -1320,6 +1541,7 @@ fi
 # ==============================================================================
 # MODULE: ADVANCED HARDENING (--harden-advanced)
 # ==============================================================================
+# Apply strict sysctl/audit rules and disable SSH password authentication.
 if [[ "$RUN_HARDEN_ADV" == true ]]; then
     echo -e "\n\e[35m[========== STARTING ADVANCED HARDENING ==========]\e[0m"
 
@@ -1347,6 +1569,7 @@ net.ipv4.icmp_echo_ignore_all = 1
 fs.suid_dumpable = 0
 kernel.randomize_va_space = 2
 EOF
+    chmod 0644 "$SYSCTL_CONF" 2>/dev/null || true
     sysctl -p "$SYSCTL_CONF" || log_warn "Failed to apply sysctl parameters."
     log_success "Kernel network hardening applied (Ping disabled, strict routing, martian logging, suid dump disabled)."
 
@@ -1367,14 +1590,14 @@ EOF
 -w /var/run/faillock/ -p wa -k logins
 -w /etc/ssh/sshd_config -p wa -k sshd_config
 EOF
+    chmod 0600 "$AUDIT_RULES" 2>/dev/null || true
     augenrules --load || log_warn "Failed to load audit rules."
     log_success "Audit daemon configured for high-fidelity credential/privilege event generation."
 
     if dpkg -s openssh-server &> /dev/null 2>&1 || rpm -q openssh-server &> /dev/null 2>&1 || command -v sshd &>/dev/null; then
         log_info "Applying Strict SSH Hardening..."
-        readonly SSHD_CONF="/etc/ssh/sshd_config"
-        sed -i -E 's/^#?PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONF"
-        sed -i -E 's/^#?X11Forwarding.*/X11Forwarding no/' "$SSHD_CONF"
+        set_sshd_option "$SSHD_CONF" PasswordAuthentication no
+        set_sshd_option "$SSHD_CONF" X11Forwarding no
         service_restart "$SSH_SERVICE"
         log_success "SSH Password Authentication and X11 Forwarding disabled."
     fi
@@ -1384,6 +1607,7 @@ fi
 # ==============================================================================
 # MODULE: NETWORKING (SSH) & 2FA
 # ==============================================================================
+# Install and validate OpenSSH, optionally configuring Google Authenticator PAM MFA.
 if [[ "$RUN_SSH" == true ]]; then
     echo -e "\n\e[35m[========== STARTING SSH PROVISIONING MODULE ==========]\e[0m"
     if [[ "$RUN_REINSTALL" == true ]] || { ! dpkg -s openssh-server &> /dev/null 2>&1 && ! rpm -q openssh-server &> /dev/null 2>&1 && ! command -v sshd &>/dev/null; }; then
@@ -1394,12 +1618,10 @@ if [[ "$RUN_SSH" == true ]]; then
     if [[ "$RUN_2FA" == true ]]; then
         log_info "Configuring Google Authenticator MFA for SSH..."
         pkg_install google-authenticator
-        readonly SSHD_CONF="/etc/ssh/sshd_config"
-        readonly PAM_CONF="/etc/pam.d/sshd"
 
-        sed -i -E 's/^#?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication yes/' "$SSHD_CONF"
-        sed -i -E 's/^#?KbdInteractiveAuthentication.*/KbdInteractiveAuthentication yes/' "$SSHD_CONF"
-        sed -i -E 's/^#?UsePAM.*/UsePAM yes/' "$SSHD_CONF"
+        set_sshd_option "$SSHD_CONF" ChallengeResponseAuthentication yes
+        set_sshd_option "$SSHD_CONF" KbdInteractiveAuthentication yes
+        set_sshd_option "$SSHD_CONF" UsePAM yes
 
         # Idempotent PAM injection with nullok (secures login while avoiding lockout before key generation)
         if ! grep -q "pam_google_authenticator.so" "$PAM_CONF" 2>/dev/null; then
@@ -1431,6 +1653,7 @@ fi
 # ==============================================================================
 # MODULE: DISCORD & GAMING
 # ==============================================================================
+# Select filesystem-appropriate Discord packaging, then configure gaming repos and GPU drivers.
 if [[ "$RUN_DISCORD" == true ]]; then
     echo -e "\n\e[35m[========== STARTING DISCORD TRANSITION MODULE ==========]\e[0m"
     if [[ "$IS_ATOMIC" == true || "$IS_STEAMOS" == true ]]; then
@@ -1484,15 +1707,13 @@ if [[ "$RUN_GAMING" == true ]]; then
         zypper ar -cfp 90 "https://ftp.gwdg.de/pub/linux/misc/packman/suse/openSUSE_Leap_\$releasever/Essentials/" packman-essentials 2>/dev/null || true
     elif [[ "$DISTRO_FAMILY" == "arch" || "$DISTRO_FAMILY" == "steamos" ]]; then
         log_info "Verifying multilib repository is active in /etc/pacman.conf..."
-        if grep -q "^#\[multilib\]" /etc/pacman.conf 2>/dev/null; then
-            sed -i '/^#\[multilib\]/{n;s/^#Include/Include/}; s/^#\[multilib\]/\[multilib\]/' /etc/pacman.conf 2>/dev/null || true
-        fi
+        enable_multilib_repository
     else
         pkg_install flatpak snapd
     fi
 
     ensure_flatpak
-    readonly GAMING_PKGS=(winetricks steam lutris)
+    readonly GAMING_PKGS=(winetricks steam lutris gamemode mangohud)
     pkg_install "${GAMING_PKGS[@]}"
     install_flatpak_app net.davidotek.pupgui2 || true
     install_flatpak_app com.usebottles.bottles || true
@@ -1636,19 +1857,19 @@ if [[ "$RUN_GAMING" == true ]]; then
                     log_info "Fedora Atomic/Bazzite includes Mesa/RADV drivers in base image."
                     ;;
                 steamos)
-                        if [[ "$RUN_REBUILD" == true ]]; then
-                            refresh_package_cache
-                            steamos_unlock
-                            steamos_gpu_cmd=(pacman -S --overwrite '*')
-                            if [[ "$AUTO_YES" == "-y" ]]; then steamos_gpu_cmd+=(--noconfirm); fi
-                            steamos_gpu_cmd+=(mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon vulkan-tools)
-                            if ! run_cmd "Reinstalling SteamOS AMD graphics packages with file overwrite enabled" "${steamos_gpu_cmd[@]}"; then
-                                log_warn "SteamOS AMD graphics package transaction failed."
-                            fi
-                            steamos_lock
-                        else
-                            log_info "SteamOS native AMD Mesa/RADV driver stack is active."
+                    if [[ "$RUN_REBUILD" == true ]]; then
+                        refresh_package_cache
+                        steamos_unlock
+                        steamos_gpu_cmd=(pacman -S --overwrite '*')
+                        if [[ "$AUTO_YES" == "-y" ]]; then steamos_gpu_cmd+=(--noconfirm); fi
+                        steamos_gpu_cmd+=(mesa lib32-mesa vulkan-radeon lib32-vulkan-radeon vulkan-tools)
+                        if ! run_cmd "Reinstalling SteamOS AMD graphics packages with file overwrite enabled" "${steamos_gpu_cmd[@]}"; then
+                            log_warn "SteamOS AMD graphics package transaction failed."
                         fi
+                        steamos_lock
+                    else
+                        log_info "SteamOS native AMD Mesa/RADV driver stack is active."
+                    fi
                     ;;
                 arch)
                     if [[ "$RUN_REBUILD" == true ]]; then
@@ -1686,6 +1907,7 @@ fi
 # ==============================================================================
 # WRAP UP & REBOOT
 # ==============================================================================
+# Restore tracing state, summarize the transcript, and prompt for reboot when interactive.
 if [[ "$RUN_DEBUG" == true ]]; then
     set +x
 fi
@@ -1697,9 +1919,8 @@ echo -e "===============================================================\n"
 
 if [[ "$UNATTENDED" == true ]]; then
     log_warn "Unattended mode: Skipping interactive reboot prompt. Please restart manually."
-elif [ -t 1 ]; then
-    read -p "A reboot is recommended to apply kernel updates and drivers. Reboot now? (y/n): " -n 1 -r
-    echo ""
+elif [[ -r /dev/tty && -w /dev/tty ]]; then
+    prompt_tty "A reboot is recommended to apply kernel updates and drivers. Reboot now? (y/n): " REPLY true
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log_warn "Rebooting system..."
         reboot

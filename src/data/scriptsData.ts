@@ -1,7 +1,14 @@
 import { ScriptItem } from '../types';
 import repoScriptsRaw from './repoScripts.json';
+import linuxDeploymentScript from '../../Linux/Provisioning/Linux-Deployment-Tool/Linux-Deployment-Tool.sh?raw';
 
-export const RAW_SCRIPTS: Record<string, { path: string; content: string }> = repoScriptsRaw;
+export const RAW_SCRIPTS: Record<string, { path: string; content: string }> = {
+  ...repoScriptsRaw,
+  'Linux-Deployment-Tool.sh': {
+    ...repoScriptsRaw['Linux-Deployment-Tool.sh'],
+    content: linuxDeploymentScript
+  }
+};
 
 export const SCRIPT_CATALOG: ScriptItem[] = [
   {
@@ -12,7 +19,7 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     category: 'Provisioning',
     language: 'bash',
     description: 'Production-ready, modular flag-based deployment tool for fresh Linux installations. Features multi-distro special handling (Atomic, SteamOS, Arch, openSUSE), Nobara GPU protection, and tiered security hardening.',
-    version: '2.0.1',
+    version: '2.1',
     author: 'Zachary Schmalz (github.com/ZacharySchmalzEng/Tools)',
     requiresElevation: true,
     supportedDistrosOrEditions: [
@@ -43,11 +50,12 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
       { flag: '--all', name: 'Universal Baseline', description: 'Executes all standard modules. Intentionally excludes --harden-advanced and --2fa to prevent accidental lockout.', category: 'profile' },
       { flag: '--update', name: 'Update Packages', description: 'Sequentially upgrades package manager (DNF, rpm-ostree, Pacman, Zypper, APT), Flatpak, and Snap packages.', category: 'core' },
       { flag: '--apps', name: 'System & Utilities', description: 'Brave, Chrome, Obsidian, Signal, Timeshift, btop, eza, plocate, 7zip, vlc, baobab/filelight/cosmic-files.', category: 'apps', associatedSoftware: ['Brave Browser', 'Google Chrome', 'Obsidian', 'Signal Desktop', 'Timeshift', 'btop', 'eza', 'plocate', 'VLC Media Player'] },
-      { flag: '--devapps', name: 'Developer Stack', description: 'Python 3, OpenSSL, VS Code, GitHub Desktop, Microsoft PowerShell (pwsh), and Remmina.', category: 'apps', associatedSoftware: ['VS Code', 'Python 3', 'GitHub Desktop', 'PowerShell 7 (pwsh)', 'Remmina Remote Desktop', 'OpenSSL'] },
+      { flag: '--devapps', name: 'Developer Stack', description: 'Git, jq, fzf, tealdeer, rsync, Python 3, OpenSSL, VS Code, and Microsoft PowerShell (pwsh).', category: 'apps', associatedSoftware: ['Git', 'jq', 'fzf', 'tealdeer', 'rsync', 'VS Code', 'Python 3', 'PowerShell 7 (pwsh)', 'OpenSSL'] },
       { flag: '--cyber', name: 'Cybersecurity Suite', description: 'Wireshark (adds user to wireshark group), Nmap, TCPDump, and Ncat.', category: 'apps', associatedSoftware: ['Wireshark', 'Nmap', 'TCPDump', 'Ncat'] },
+      { flag: '--sysadmin', name: 'System Administration', description: 'Remmina, tmux, Wireshark, Nmap, TCPDump, DNS and network diagnostics, disk observability, and process tracing.', category: 'apps', associatedSoftware: ['Remmina', 'tmux', 'Wireshark', 'Nmap', 'TCPDump', 'dig', 'mtr', 'iperf3', 'sysstat', 'iotop', 'ncdu', 'smartmontools', 'lsof', 'strace'] },
       { flag: '--maker', name: '3D Printing & CAD', description: 'PrusaSlicer, OrcaSlicer, and Bambu Studio.', category: 'apps', associatedSoftware: ['PrusaSlicer', 'OrcaSlicer', 'Bambu Studio'] },
-      { flag: '--creators', name: 'Creative Production', description: 'Blender, Darktable, Audacity, Inkscape, and OBS Studio.', category: 'apps', associatedSoftware: ['Blender', 'Darktable', 'Audacity', 'Inkscape', 'OBS Studio'] },
-      { flag: '--gaming', name: 'Gaming & GPU Drivers', description: 'Steam, Lutris, Bottles, and auto-detects/installs GPU driver stacks with Nobara safeguards.', category: 'apps', associatedSoftware: ['Steam', 'Lutris', 'Bottles', 'NVIDIA akmod/DKMS / AMD Mesa Vulkan'] },
+      { flag: '--creators', name: 'Creative Production', description: 'GIMP, Krita, Blender, Audacity, Inkscape, and OBS Studio.', category: 'apps', associatedSoftware: ['GIMP', 'Krita', 'Blender', 'Audacity', 'Inkscape', 'OBS Studio'] },
+      { flag: '--gaming', name: 'Gaming & GPU Drivers', description: 'Steam, Lutris, Bottles, GameMode, MangoHud, and auto-detected GPU drivers with Nobara safeguards.', category: 'apps', associatedSoftware: ['Steam', 'Lutris', 'Bottles', 'GameMode', 'MangoHud', 'NVIDIA akmod/DKMS / AMD Mesa Vulkan'] },
       { flag: '--ssh', name: 'OpenSSH Server', description: 'Installs, enables, and verifies the OpenSSH daemon with socket validation.', category: 'core' },
       { flag: '--discord', name: 'Discord Configuration', description: 'Configures native RPM on standard Fedora; sandboxed Flathub package on Atomic and SteamOS.', category: 'apps' },
       { flag: '--atomic', name: 'Fedora Atomic Mode', description: 'Force rpm-ostree package layering, Flatpak containment, and scheduled reboots.', category: 'modifier' },

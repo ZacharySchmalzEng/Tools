@@ -66,7 +66,10 @@ export const TerminalSimulator: React.FC<TerminalSimulatorProps> = ({
 
     if (scriptId === 'linux-deployment-tool') {
       const hasApps = cmd.includes('--apps') || cmd.includes('--all');
-      const hasGaming = cmd.includes('--gaming');
+      const hasDevApps = cmd.includes('--devapps') || cmd.includes('--all');
+      const hasCreators = cmd.includes('--creators') || cmd.includes('--all');
+      const hasSysadmin = cmd.includes('--sysadmin') || cmd.includes('--all');
+      const hasGaming = cmd.includes('--gaming') || cmd.includes('--all');
       const hasStrict = cmd.includes('--harden-advanced');
       const hasHarden = cmd.includes('--harden') || cmd.includes('--all');
       const has2FA = cmd.includes('--2fa');
@@ -121,7 +124,7 @@ export const TerminalSimulator: React.FC<TerminalSimulatorProps> = ({
 
       const lines: { type: LogLine['type']; text: string }[] = [
         { type: 'cmd', text: cmd },
-        { type: 'header', text: '=== Linux Automated Deployment & Provisioning Tool v2.0 ===' },
+        { type: 'header', text: '=== Linux Automated Deployment & Provisioning Tool v2.1 ===' },
         { type: 'info', text: 'Initializing execution context with strict mode (set -euo pipefail, umask 077)...' },
         { type: 'info', text: 'Registering signal recovery traps (SteamOS auto-relock & temp directory garbage collection)...' },
         { type: 'info', text: 'Validating root / superuser execution privileges...' },
@@ -154,11 +157,32 @@ export const TerminalSimulator: React.FC<TerminalSimulatorProps> = ({
         );
       }
 
+      if (hasDevApps) {
+        lines.push(
+          { type: 'info', text: '[Dev Apps Module] Installing baseline CLI and development tools...' },
+          { type: 'success', text: '[Dev Apps Module] Staged: git, jq, fzf, tealdeer, rsync, python3, openssl, PowerShell, VS Code' }
+        );
+      }
+
+      if (hasCreators) {
+        lines.push(
+          { type: 'info', text: '[Creators Module] Installing creative production tools...' },
+          { type: 'success', text: '[Creators Module] Staged: gimp, krita, blender, audacity, inkscape, obs-studio' }
+        );
+      }
+
       if (hasGaming) {
         lines.push(
           { type: 'info', text: '[Gaming Module] Configuring RPM Fusion non-free-tainted repository...' },
           { type: 'info', text: '[Gaming Module] Installing 32-bit & 64-bit Vulkan ICDs and Mesa drivers...' },
-          { type: 'success', text: '[Gaming Module] Staged: steam, lutris, wine, gamemode, vulkan-tools' }
+          { type: 'success', text: '[Gaming Module] Staged: steam, lutris, wine, gamemode, mangohud, vulkan-tools' }
+        );
+      }
+
+      if (hasSysadmin) {
+        lines.push(
+          { type: 'info', text: '[Sysadmin Module] Resolving remote access, session, network, disk, and process diagnostics...' },
+          { type: 'success', text: '[Sysadmin Module] Staged: remmina, tmux, wireshark, nmap, tcpdump, bind-utils, mtr, iperf3, sysstat, iotop, ncdu, smartmontools, lsof, strace' }
         );
       }
 
