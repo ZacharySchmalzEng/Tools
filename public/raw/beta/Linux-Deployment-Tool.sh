@@ -5,7 +5,7 @@
 #     Automated Linux provisioning and environment setup orchestrator (Modular Beta).
 #
 # DESCRIPTION
-#     Main top-level runner for the v3.0-beta Modular Linux Deployment Tool.
+#     Main top-level runner for the v3.0.1-beta Modular Linux Deployment Tool.
 #     Positioned at the top of the ./Beta directory so the Beta directory can be
 #     downloaded as a simple tarball or fetched as a single runner script that
 #     downloads missing child modules into ./lib/ and ./modules/ on-demand from
@@ -17,17 +17,17 @@
 #     Issues/Requests: https://github.com/ZacharySchmalzEng/Tools/issues
 #
 # NOTES
-#     Version:        3.0-beta
+#     Version:        3.0.1-beta
 #     Branch:         main
 #     Requirements:   Bash, root/sudo privileges, active internet connection.
 #     Supported OS:   Fedora, Nobara, Fedora Atomic (Silverblue/Bazzite),
 #                     Arch Linux, SteamOS, openSUSE (Tumbleweed/Leap), Debian/Ubuntu.
-#     Changelog:      See CHANGELOG.md for full version history, security
+#     Changelog:      See ./CHANGELOG.md for full version history, security
 #                     mitigations, defect resolutions, and feature updates.
 # ==============================================================================
 
 set -euo pipefail
-umask 077
+umask 0022
 
 # ------------------------------------------------------------------------------
 # 1. DIRECTORY RESOLUTION & SHARED LIBRARY BOOTSTRAP
@@ -42,7 +42,7 @@ COMMON_LIB_PATH="${SUITE_ROOT}/lib/common.sh"
 
 bootstrap_common_library() {
     if [[ -f "$COMMON_LIB_PATH" ]]; then
-        chmod 0700 "$COMMON_LIB_PATH" 2>/dev/null || true
+        chmod 0755 "$COMMON_LIB_PATH" 2>/dev/null || true
         # shellcheck disable=SC1090
         source "$COMMON_LIB_PATH"
         return 0
@@ -50,7 +50,7 @@ bootstrap_common_library() {
 
     echo -e "\e[36m[INFO] Shared core library (lib/common.sh) not found locally. Downloading on-demand from GitHub...\e[0m"
     mkdir -p "$(dirname "$COMMON_LIB_PATH")"
-    chmod 0700 "$(dirname "$COMMON_LIB_PATH")" 2>/dev/null || true
+    chmod 0755 "$(dirname "$COMMON_LIB_PATH")" 2>/dev/null || true
 
     local tmp_lib="${COMMON_LIB_PATH}.tmp.$$"
     if command -v curl &>/dev/null; then
@@ -78,7 +78,7 @@ bootstrap_common_library() {
         exit 1
     fi
 
-    chmod 0700 "$tmp_lib"
+    chmod 0755 "$tmp_lib"
     mv -f "$tmp_lib" "$COMMON_LIB_PATH"
     # shellcheck disable=SC1090
     source "$COMMON_LIB_PATH"
@@ -91,7 +91,7 @@ bootstrap_common_library
 # ------------------------------------------------------------------------------
 print_usage() {
     echo -e "\n==============================================================="
-    echo -e " Linux Provisioning & Deployment Environment Setup Script (v3.0-beta)"
+    echo -e " Linux Provisioning & Deployment Environment Setup Script (v3.0.1-beta)"
     echo -e " Top-of-Beta Modular Runner (Tarball & On-Demand GitHub Modules)"
     echo -e "==============================================================="
     echo "Usage: sudo ./Linux-Deployment-Tool.sh [Options]"
@@ -134,6 +134,7 @@ print_usage() {
     echo "  --all               Executes ALL standard modules (Excludes harden-advanced)"
     echo "  --reinstall         Reinstalls packages selected by other modules where supported"
     echo "  --rebuild           Reinstalls packages and rebuilds supported GPU modules/initramfs"
+    echo "  --no-update-check   Bypasses the automatic GitHub startup update check"
     echo "  -y                  Auto-install (answers yes to prompts)"
     echo "  -d                  Download only (applies to DNF/APT updates)"
     echo "  --debug             Enables command tracing (set -x) for troubleshooting"
@@ -166,11 +167,14 @@ DOWNLOAD_ONLY=""
 DOWNLOAD_ONLY_REQUESTED=false
 RUN_REINSTALL=false
 RUN_REBUILD=false
+NO_UPDATE_CHECK=false
 
 if [[ "$#" -eq 0 ]]; then
     print_usage
     exit 0
 fi
+
+ORIGINAL_ARGS=("$@")
 
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
@@ -190,6 +194,7 @@ while [[ "$#" -gt 0 ]]; do
         --harden-advanced) RUN_HARDEN_ADV=true ;;
         --reinstall) RUN_REINSTALL=true ;;
         --rebuild) RUN_REBUILD=true; RUN_REINSTALL=true ;;
+        --no-update-check) NO_UPDATE_CHECK=true ;;
         --debug) RUN_DEBUG=true ;;
         --unattended) UNATTENDED=true ;;
         --atomic|--silverblue) DISTRO_OVERRIDE="atomic" ;;
@@ -263,11 +268,11 @@ fi
 
 readonly LOG_DIR="${SCRIPT_DIR}/InstallerLogs"
 mkdir -p "$LOG_DIR"
-chmod 700 "$LOG_DIR" 2>/dev/null || true
+chmod 0777 "$LOG_DIR" 2>/dev/null || true
 
 readonly TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 readonly LOG_FILE="${LOG_DIR}/installer_log_${TIMESTAMP}.log"
-touch "$LOG_FILE" && chmod 600 "$LOG_FILE" 2>/dev/null || true
+touch "$LOG_FILE" && chmod 0666 "$LOG_FILE" 2>/dev/null || true
 
 exec > >(tee -i "$LOG_FILE") 2>&1
 
@@ -276,7 +281,7 @@ if [[ "$RUN_DEBUG" == true ]]; then
     set -x
 fi
 
-log_success "Running with root privileges (v3.0-beta Modular Orchestrator)."
+log_success "Running with root privileges (v3.0.1-beta Modular Orchestrator)."
 log_info "Logging execution to: $LOG_FILE"
 
 if [[ "$RUN_REBUILD" == true ]]; then
@@ -288,7 +293,124 @@ fi
 bootstrap_prerequisites
 
 # ------------------------------------------------------------------------------
-# 5. INTERACTIVE PROMPTS & DESKTOP ENVIRONMENT CONFIGURATION
+# 5. GITHUB UPDATE DETECTION & INTERACTIVE SELF-UPDATING
+# Checks if newer versions of the runner, shared library, or invoked child modules
+# exist on GitHub and interactively prompts the user before updating.
+# ------------------------------------------------------------------------------
+check_and_prompt_github_updates() {
+    if [[ "$NO_UPDATE_CHECK" == true ]]; then
+        log_info "Update check bypassed via --no-update-check."
+        return 0
+    fi
+
+    log_info "Checking GitHub for script updates..."
+    local candidate_files=()
+    local candidate_targets=()
+    local candidate_tmps=()
+
+    # Scope 1: Main runner itself
+    local runner_rel="Linux-Deployment-Tool.sh"
+    local runner_target="${SCRIPT_DIR}/Linux-Deployment-Tool.sh"
+    local tmp_runner=""
+    if check_remote_script_update "$runner_rel" "$runner_target" tmp_runner; then
+        :
+    elif [[ $? -eq 1 && -n "$tmp_runner" ]]; then
+        candidate_files+=("$runner_rel")
+        candidate_targets+=("$runner_target")
+        candidate_tmps+=("$tmp_runner")
+    fi
+
+    # Scope 2: Shared core library
+    local lib_rel="lib/common.sh"
+    local lib_target="${SUITE_ROOT}/lib/common.sh"
+    local tmp_lib=""
+    if check_remote_script_update "$lib_rel" "$lib_target" tmp_lib; then
+        :
+    elif [[ $? -eq 1 && -n "$tmp_lib" ]]; then
+        candidate_files+=("$lib_rel")
+        candidate_targets+=("$lib_target")
+        candidate_tmps+=("$tmp_lib")
+    fi
+
+    # Scope 3: Invoked child modules
+    check_mod() {
+        local enabled="$1"
+        local mod_name="$2"
+        if [[ "$enabled" != true ]]; then return 0; fi
+        local mod_rel="modules/${mod_name}"
+        local mod_target="${SUITE_ROOT}/modules/${mod_name}"
+        local tmp_m=""
+        if check_remote_script_update "$mod_rel" "$mod_target" tmp_m; then
+            :
+        elif [[ $? -eq 1 && -n "$tmp_m" ]]; then
+            candidate_files+=("$mod_rel")
+            candidate_targets+=("$mod_target")
+            candidate_tmps+=("$tmp_m")
+        fi
+    }
+
+    check_mod "$RUN_UPDATE"     "mod-update.sh"
+    check_mod "$RUN_APPS"       "mod-apps.sh"
+    check_mod "$RUN_DEVAPPS"    "mod-devapps.sh"
+    check_mod "$RUN_SYSADMIN"   "mod-sysadmin.sh"
+    check_mod "$RUN_CYBER"      "mod-cyber.sh"
+    check_mod "$RUN_MAKER"      "mod-maker.sh"
+    check_mod "$RUN_CREATORS"   "mod-creators.sh"
+    check_mod "$RUN_HARDEN"     "mod-harden.sh"
+    check_mod "$RUN_HARDEN_ADV" "mod-harden-adv.sh"
+    check_mod "$RUN_SSH"        "mod-ssh.sh"
+    check_mod "$RUN_DISCORD"    "mod-discord.sh"
+    check_mod "$RUN_GAMING"     "mod-gaming.sh"
+
+    if [[ ${#candidate_files[@]} -eq 0 ]]; then
+        log_success "All scripts are up-to-date with GitHub."
+        return 0
+    fi
+
+    echo -e "\n\e[33m==============================================================="
+    echo -e "[!] Upstream updates from GitHub are available for ${#candidate_files[@]} script(s):"
+    for f in "${candidate_files[@]}"; do
+        echo -e "    • ${f}"
+    done
+    echo -e "===============================================================\e[0m"
+
+    local apply_update=false
+    if [[ "$UNATTENDED" == true || "$AUTO_YES" == "-y" ]]; then
+        log_info "Unattended / -y mode: Automatically applying available updates."
+        apply_update=true
+    elif [[ -r /dev/tty && -w /dev/tty ]]; then
+        local user_reply=""
+        prompt_tty "Do you want to update these scripts from GitHub now? (y/n): " user_reply true
+        if [[ $user_reply =~ ^[Yy]$ ]]; then
+            apply_update=true
+        else
+            log_info "Update skipped. Continuing with current local scripts."
+        fi
+    else
+        log_info "Non-interactive environment detected without controlling terminal. Skipping auto-update."
+    fi
+
+    if [[ "$apply_update" == true ]]; then
+        local runner_was_updated=false
+        local i
+        for ((i=0; i<${#candidate_files[@]}; i++)); do
+            apply_script_update "${candidate_files[i]}" "${candidate_targets[i]}" "${candidate_tmps[i]}"
+            if [[ "${candidate_files[i]}" == "Linux-Deployment-Tool.sh" ]]; then
+                runner_was_updated=true
+            fi
+        done
+
+        if [[ "$runner_was_updated" == true ]]; then
+            log_warn "Main runner script was updated. Restarting execution with updated code..."
+            exec "${candidate_targets[0]}" "${ORIGINAL_ARGS[@]}" --no-update-check
+        fi
+    fi
+}
+
+check_and_prompt_github_updates
+
+# ------------------------------------------------------------------------------
+# 6. INTERACTIVE PROMPTS & DESKTOP ENVIRONMENT CONFIGURATION
 # ------------------------------------------------------------------------------
 if [[ "$RUN_APPS" == true || -n "${DESKTOP_ENV:-}" ]]; then
     resolve_desktop_environment

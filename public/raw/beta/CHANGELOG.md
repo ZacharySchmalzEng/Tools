@@ -1,80 +1,46 @@
-# Changelog — Linux Automated Deployment & Provisioning Tool
+# Changelog — Linux-Deployment-Tool (Beta Channel 3.x)
 
-All notable security updates, defect resolutions, and feature enhancements for `Linux-Deployment-Tool.sh` and its modular child scripts are documented in this file.
+This document tracks all release notes, architectural enhancements, security updates, and bug fixes for the **3.x Beta Modular Suite** located in this directory (`Linux/Provisioning/Linux-Deployment-Tool/Beta/`).
 
----
-
-## [v3.0-beta] — Modular On-Demand Architecture & Standalone Child Scripts
-
-### Feature Enhancements
-- **Modular Child Script Architecture (`Beta/`):** Decomposed the monolithic deployment script into a main orchestrator (`Linux-Deployment-Tool.sh`), a shared core library (`lib/common.sh`), and 12 standalone child module scripts (`modules/mod-*.sh`).
-- **Independent & Orchestrated Execution:** Every child script in `modules/` can be invoked independently from the command line (e.g., `sudo ./modules/mod-gaming.sh --rebuild -y`) or orchestrated via the main entry point (`sudo ./Linux-Deployment-Tool.sh --gaming --ssh -y`).
-- **Lazy Flag-Driven GitHub Sync:** Missing child scripts and the shared library are downloaded on-demand from the GitHub repository (`beta/modular-v3` branch) only when their corresponding CLI flags are invoked, and cached locally in `./lib/` and `./modules/` for subsequent runs.
-- **Standalone Changelog Extraction:** Separated historical release notes, CVE mitigations, and defect resolutions from script header comments into a dedicated `CHANGELOG.md` file.
+For historical release notes for versions `1.0` through `2.1` (the monolithic production channel), see the main changelog at **`../CHANGELOG.md`**.
 
 ---
 
-## [v2.1] — Multi-Tier Recovery Engine & Hybrid GPU Detection
+## [v3.0.1-beta] — Relaxed Ambient Umask & Non-Root Log Permissions
 
-### Feature Enhancements
-- **Multi-Tier Reinstall Engine:** Added `--reinstall` for native package-manager reinstalls and `--rebuild` for supported DKMS/akmods and initramfs recovery. Pacman file overwrites are limited to GPU-driver transactions; Atomic NVIDIA rebuilds clear pending `rpm-ostree` changes and warn that unrelated staged changes are discarded.
-- **DNF Network Resilience:** Added 10 retries and a 60-second timeout (`--setopt=retries=10 --setopt=timeout=60`) to DNF package and metadata operations to better tolerate slow or intermittently unreachable mirrors.
-- **Split Installed/Missing Package Routing:** Added `rpm -q` state inspection in `pkg_install()` so DNF cleanly splits mixed package arrays into separate `install` and `reinstall` transactions without failing on missing packages.
-- **System Administration Module (`--sysadmin`):** Added dedicated operations and observability toolkit including `remmina`, `tmux`, `wireshark`, `nmap`, `tcpdump`, `bind-utils`, `mtr`, `iperf3`, `sysstat`, `iotop`, `ncdu`, `smartmontools`, `lsof`, and `strace`.
+### Security & Operational Enhancements
+- **Non-Root Readable & Writable Permissions (+rw):**
+  - Relaxed initial ambient `umask 077` to standard `umask 0022` across `Beta/Linux-Deployment-Tool.sh` and `Beta/lib/common.sh`.
+  - Configured `InstallerLogs/` directory to `0777` permissions.
+  - Set generated execution transcripts (`InstallerLogs/installer_log_*.log`) to `0666` (`rw-rw-rw-`) permissions. Non-root desktop sessions, IDEs, and local user accounts can now read, tail, or append to logs without requiring `sudo` or administrative elevation.
+  - Set library and child module directories (`lib/`, `modules/`) and cached scripts to `0755` (`rwxr-xr-x`), maintaining administrative execution (`+x`) while allowing all system users to read the code without elevation.
 
-### Defect Resolutions & Bug Fixes
-- **Fixed Hybrid GPU Detection:** Inspects all `lspci` display-controller entries (`VGA|3D controller|Display controller`) and falls back to `sysfs` (`/sys/bus/pci/devices/*/vendor`), preventing an Intel iGPU from masking a supported NVIDIA or AMD discrete GPU.
-
----
-
-## [v2.0.2] — Package Routing & Strict Mode Hardening
-
-### Defect Resolutions & Bug Fixes
-- **Resolved Flatpak Non-Zero Exit Abort:** Updated `install_flatpak_app()` to gracefully warn and return `0` on skipped or failed Flatpak installations rather than triggering the `ERR` trap under strict `set -e` mode.
-- **Resolved Wireshark-Qt Package Resolution Failure:** Mapped `wireshark-qt` to `wireshark` for Fedora/RPM distros and added `--skip-unavailable` to `dnf` package transactions.
-- **Resolved Multiline Array Logging:** Restored standard `IFS` parsing so array expansion logs cleanly with space separators instead of newlines.
-- **Resolved Top-Level Local Keyword Errors:** Removed invalid top-level `local` declarations from hardening, Discord, and gaming configuration blocks.
+### Defect Resolutions & GitHub Raw Routing
+- **Main Branch Raw URL Fallback:** Updated the default `GITHUB_RAW_BASE` repository URL across the main runner, shared library, and all 12 child modules to target the active `main` branch:
+  `https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta`
+  resolving HTTP 404 errors during isolated single-runner curl executions.
+- **Automated GitHub Update Detection & Self-Updating:** Added startup update checking against GitHub for the main runner (`Linux-Deployment-Tool.sh`), shared core library (`lib/common.sh`), and all invoked child modules (`modules/mod-*.sh`). Uses SHA-256 hash comparison between local and remote raw files, and interactively prompts the user (`y/n`) with the list of candidate updates before downloading and applying them. Seamlessly restarts execution (`exec "$0" "$@"`) if the main runner itself is updated. Can be bypassed using `--no-update-check`.
 
 ---
 
-## [v2.0.1] — Production Hotfix Release
+## [v3.0.0-beta] — Modular On-Demand Architecture & Standalone Child Scripts
 
-### Defect Resolutions & Bug Fixes
-- **Resolved Flathub OrcaSlicer App ID Not Found:** Migrated package identifier from deprecated `com.softfever.OrcaSlicer` to `com.orcaslicer.OrcaSlicer` with automated legacy fallback in `install_flatpak_app()`.
-- **Resolved Fatal `sed /etc/dnf/automatic.conf` Crash (Exit code 2):** Added auto-creation of missing `/etc/dnf/automatic.conf` template on fresh/minimal systems, guarded against uninstalled configuration modifications in download-only mode (`-d`), and added dual timer support for both `dnf-automatic.timer` and modern `dnf5-automatic.timer`.
-
----
-
-## [v2.0] — Multi-Distro Engine, Multi-DE Support & SecOps Hardening
-
-### Security Updates & CVE Mitigations
-- **CVE-2024-6387 (OpenSSH "regreSSHion"):** Mitigated remote code execution vulnerability by tuning `LoginGraceTime` to `20s`, capping `MaxAuthTries` to `3`, `MaxSessions` to `4`, `MaxStartups` to `10:30:60`, and setting `ClientAliveInterval` to `300`.
-- **Interruption & SteamOS Lock Traps:** Implemented `cleanup_handler` across `EXIT`, `INT`, `TERM`, and `HUP` to guarantee immediate re-locking of SteamOS immutable root protection (`steamos-readonly enable`) and secure removal of temporary directories.
-- **Ambient File Mode Hardening:** Enforced strict global `umask 077` at script entry; strictly enforced `0700` permissions on `$LOG_DIR` and `0600` on `$LOG_FILE`.
-- **CIS Level 2 Kernel Sysctl Hardening:** Blocked SUID memory core dumps (`fs.suid_dumpable = 0`), enforced complete ASLR (`kernel.randomize_va_space = 2`), enabled `log_martians` and reverse path filtering (`rp_filter = 1`), and dropped ICMP redirects and source routes.
-- **Privilege & Identity Auditd Rules:** Applied high-fidelity audit monitoring rules for `/etc/sudoers`, `/etc/shadow`, `/etc/passwd`, `/etc/gshadow`, and `/etc/ssh/sshd_config`.
-- **PAM SSH 2FA Protection:** Configured `pam_google_authenticator` with `nullok` during provisioning to eliminate administrator lockout prior to OTP key generation.
-
-### Feature Enhancements
-- **Multi-Distro Engine:** Added native support for Fedora Atomic variants (Silverblue, Bazzite, Kinoite), Arch Linux, SteamOS (Steam Deck), and openSUSE (Tumbleweed & Leap).
-- **Distro Override CLI Flags:** Added `--atomic`, `--bazzite`, `--silverblue`, `--arch`, `--steamos`, `--opensuse`, and `--distro=<name>` manual override flags with auto-detection fallbacks.
-- **Expanded Desktop Environment Suite:** Added native support, auto-detection, and tailored QoL modules for COSMIC Desktop (System76 Rust Epoch), XFCE, and Cinnamon alongside GNOME and KDE Plasma.
-- **Desktop Environment CLI Flags:** Added `--gnome`, `--kde`, `--cosmic`, `--xfce`, `--cinnamon`, and `--de=<name>` flags for fully automated non-interactive provisioning.
-- **SteamOS Lifecycle:** Added automated `steamos-readonly disable/enable` state machine.
-- **Package Router:** Implemented unified `pkg_install()` supporting `dnf`, `rpm-ostree`, `pacman`, `zypper`, and `apt-get` with auto-healing cache updates.
-- **Zero-Dependency Auto-Bootstrap:** Implemented `bootstrap_prerequisites()` for bare-metal installs.
-
-### Defect Resolutions & Bug Fixes
-- **Resolved Nobara NVIDIA Driver Packaging Collision:** Bypassed manual RPM Fusion `akmod-nvidia` installation on Nobara Linux to eliminate fatal conflicts with pre-installed `dkms-nvidia` packages from the `nobara-nvidia-production` repository.
-- **Resolved PowerShell 404 Download Failures:** Replaced unversioned GitHub RPM release downloads with official Microsoft package repositories and Flathub fallback.
-- **Resolved ShellCheck SC2155 Warning:** Split `readonly SCRIPT_DIR` declaration and subshell assignment to prevent masking subshell exit codes.
-- **Resolved SteamOS GPG Signature Failures:** Added automated `pacman-key --init` and `--populate archlinux holo` initialization prior to running `pacman` transactions.
-- **Resolved Non-interactive Debian Debconf Stalls:** Exported `DEBIAN_FRONTEND=noninteractive` during `apt-get` invocations.
-
----
-
-## [v1.2] — Self-Healing Cache & Debian Unattended Mode
-- Added automated self-healing package cache and non-interactive Debian mode.
-
-## [v1.0] — Initial Release
-- Initial modular deployment release.
+### Architecture & Feature Enhancements
+- **Top-of-Beta Modular Runner:** Positioned `Linux-Deployment-Tool.sh` at the top of `./Beta` alongside `CHANGELOG.md`, `README.md`, `lib/`, and `modules/` for flat tarball extraction (`Linux-Deployment-Tool-Beta.tar.gz`).
+- **Decomposed Child Module Suite:** Split monolithic routines into 12 standalone child module scripts under `Beta/modules/`:
+  - `mod-update.sh` (`--update`)
+  - `mod-apps.sh` (`--apps`)
+  - `mod-devapps.sh` (`--devapps`)
+  - `mod-sysadmin.sh` (`--sysadmin`)
+  - `mod-cyber.sh` (`--cyber`)
+  - `mod-maker.sh` (`--maker`)
+  - `mod-creators.sh` (`--creators`)
+  - `mod-harden.sh` (`--harden`)
+  - `mod-harden-adv.sh` (`--harden-advanced`)
+  - `mod-ssh.sh` (`--ssh`, `--2fa`)
+  - `mod-discord.sh` (`--discord`)
+  - `mod-gaming.sh` (`--gaming`)
+- **Shared Core Library (`Beta/lib/common.sh`):** Centralized multi-distro detection (`detect_distro`), package routing (`pkg_install`), system updates (`update_system`), SteamOS read-only traps, configuration mutators (`set_sshd_option`, `set_ini_option`), and standalone child bootstrapping (`init_standalone_module`).
+- **Independent & Orchestrated Execution:** Every child module can run independently (`sudo ./modules/mod-gaming.sh --rebuild -y`) or through the main orchestrator (`sudo ./Linux-Deployment-Tool.sh --gaming -y`).
+- **Lazy On-Demand GitHub Sync:** Missing child modules are downloaded from GitHub only when their matching CLI flags are invoked, caching them locally in `./modules/` for subsequent offline execution.
+- **Dedicated Beta Changelog:** Established this `Beta/CHANGELOG.md` to track all 3.x modular development separately from the production 2.x changelog.

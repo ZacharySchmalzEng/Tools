@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # ==============================================================================
 # SYNOPSIS
-#     Shared core library for Linux-Deployment-Tool (v3.0 Beta Modular Suite).
+#     Shared core library for Linux-Deployment-Tool (v3.0.1 Beta Modular Suite).
 #
 # DESCRIPTION
 #     Provides unified logging, strict error/signal trapping, multi-distribution
@@ -12,10 +12,10 @@
 # AUTHOR
 #     Zachary Schmalz
 #     Repository:      https://github.com/ZacharySchmalzEng/Tools/
-#     Changelog:       See ../CHANGELOG.md for full release history.
+#     Changelog:       See ./CHANGELOG.md for full release history.
 #
 # NOTES
-#     Version:         3.0-beta
+#     Version:         3.0.1-beta
 # ==============================================================================
 
 if [[ "${COMMON_LIB_LOADED:-false}" == true ]]; then
@@ -27,7 +27,7 @@ COMMON_LIB_LOADED=true
 # 1. STRICT MODE, SECURITY UMASK & ERROR TRAPPING
 # ------------------------------------------------------------------------------
 set -euo pipefail
-umask 077
+umask 0022
 
 # ------------------------------------------------------------------------------
 # 2. CONSTANTS & HELPER FUNCTIONS
@@ -986,13 +986,13 @@ ensure_remote_script() {
     local remote_url="${GITHUB_RAW_BASE}/${rel_path}"
 
     if [[ -f "$target_path" ]]; then
-        chmod 0700 "$target_path" 2>/dev/null || true
+        chmod 0755 "$target_path" 2>/dev/null || true
         return 0
     fi
 
     log_info "Local script '${rel_path}' not found. Downloading on-demand from GitHub..."
     mkdir -p "$(dirname "$target_path")"
-    chmod 0700 "$(dirname "$target_path")" 2>/dev/null || true
+    chmod 0755 "$(dirname "$target_path")" 2>/dev/null || true
 
     local tmp_dl="${target_path}.tmp.$$"
     TEMP_CLEANUP_DIRS+=("$tmp_dl")
@@ -1018,9 +1018,71 @@ ensure_remote_script() {
         return 1
     fi
 
-    chmod 0700 "$tmp_dl"
+    chmod 0755 "$tmp_dl"
     mv -f "$tmp_dl" "$target_path"
     log_success "Downloaded and cached ${rel_path} -> ${target_path}"
+}
+
+# Check if a remote version of a script on GitHub differs from the local copy.
+# Returns 0 if identical/up-to-date, 1 if an update exists (sets out_tmp_path), or 2 on network/error.
+check_remote_script_update() {
+    local rel_path="$1"
+    local target_path="$2"
+    local -n out_tmp_path="$3"
+    local remote_url="${GITHUB_RAW_BASE}/${rel_path}"
+
+    if [[ ! -f "$target_path" ]]; then
+        return 0
+    fi
+
+    local tmp_check="${target_path}.chk.$$"
+    TEMP_CLEANUP_DIRS+=("$tmp_check")
+
+    if command -v curl &>/dev/null; then
+        if ! curl --connect-timeout 4 --max-time 15 --retry 1 -fsSL "$remote_url" -o "$tmp_check" 2>/dev/null; then
+            rm -f "$tmp_check" 2>/dev/null || true
+            return 2
+        fi
+    elif command -v wget &>/dev/null; then
+        if ! wget -q --timeout=15 --tries=1 -O "$tmp_check" "$remote_url" 2>/dev/null; then
+            rm -f "$tmp_check" 2>/dev/null || true
+            return 2
+        fi
+    else
+        return 2
+    fi
+
+    if ! head -n 1 "$tmp_check" 2>/dev/null | grep -q "^#!"; then
+        rm -f "$tmp_check" 2>/dev/null || true
+        return 2
+    fi
+
+    local local_sha remote_sha
+    local_sha=$(sha256sum "$target_path" 2>/dev/null | awk '{print $1}')
+    remote_sha=$(sha256sum "$tmp_check" 2>/dev/null | awk '{print $1}')
+
+    if [[ -n "$local_sha" && -n "$remote_sha" && "$local_sha" != "$remote_sha" ]]; then
+        out_tmp_path="$tmp_check"
+        return 1
+    fi
+
+    rm -f "$tmp_check" 2>/dev/null || true
+    return 0
+}
+
+# Apply a downloaded update to target_path with 0755 permissions.
+apply_script_update() {
+    local rel_path="$1"
+    local target_path="$2"
+    local tmp_path="$3"
+
+    if [[ -f "$tmp_path" ]]; then
+        chmod 0755 "$tmp_path"
+        mv -f "$tmp_path" "$target_path"
+        log_success "Updated ${rel_path} to latest version from GitHub."
+        return 0
+    fi
+    return 1
 }
 
 # Initialize a child module when invoked directly as a standalone script.

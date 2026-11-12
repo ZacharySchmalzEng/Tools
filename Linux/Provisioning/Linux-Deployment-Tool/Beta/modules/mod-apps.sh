@@ -32,7 +32,7 @@ if [[ "${COMMON_LIB_LOADED:-false}" != true ]]; then
             echo -e "\e[31m[ERROR] Neither curl nor wget is available to download lib/common.sh.\e[0m" >&2
             exit 1
         fi
-        chmod 0700 "$COMMON_PATH"
+        chmod 0755 "$COMMON_PATH"
     fi
     # shellcheck disable=SC1090
     source "$COMMON_PATH"

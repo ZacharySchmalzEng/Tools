@@ -1179,8 +1179,8 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
 
               <div className="pt-3 border-t border-slate-800/80 space-y-2 text-xs text-slate-400">
                 <div className="flex items-center justify-between text-amber-400">
-                  <span className="font-semibold text-[11px]">v3.0-beta On-Demand Child Scripts</span>
-                  <span className="font-mono text-[10px] text-slate-500">branch: beta/modular-v3</span>
+                  <span className="font-semibold text-[11px]">v3.0.1-beta On-Demand Child Scripts</span>
+                  <span className="font-mono text-[10px] text-slate-500">branch: main</span>
                 </div>
                 <p className="text-[11px] text-slate-400">
                   Main runner at <code className="font-mono text-slate-200">./Beta/Linux-Deployment-Tool.sh</code> only downloads missing child modules for enabled flags:

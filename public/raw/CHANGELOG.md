@@ -1,16 +1,9 @@
 # Changelog — Linux Automated Deployment & Provisioning Tool
 
-All notable security updates, defect resolutions, and feature enhancements for `Linux-Deployment-Tool.sh` and its modular child scripts are documented in this file.
+All notable security updates, defect resolutions, and feature enhancements for the production monolithic `Linux-Deployment-Tool.sh` are documented in this file.
 
----
-
-## [v3.0-beta] — Modular On-Demand Architecture & Standalone Child Scripts
-
-### Feature Enhancements
-- **Modular Child Script Architecture (`Beta/`):** Decomposed the monolithic deployment script into a main orchestrator (`Linux-Deployment-Tool.sh`), a shared core library (`lib/common.sh`), and 12 standalone child module scripts (`modules/mod-*.sh`).
-- **Independent & Orchestrated Execution:** Every child script in `modules/` can be invoked independently from the command line (e.g., `sudo ./modules/mod-gaming.sh --rebuild -y`) or orchestrated via the main entry point (`sudo ./Linux-Deployment-Tool.sh --gaming --ssh -y`).
-- **Lazy Flag-Driven GitHub Sync:** Missing child scripts and the shared library are downloaded on-demand from the GitHub repository (`beta/modular-v3` branch) only when their corresponding CLI flags are invoked, and cached locally in `./lib/` and `./modules/` for subsequent runs.
-- **Standalone Changelog Extraction:** Separated historical release notes, CVE mitigations, and defect resolutions from script header comments into a dedicated `CHANGELOG.md` file.
+> [!NOTE]
+> For the new modular **v3.x Beta Suite**, release notes and version updates are tracked separately in the beta directory at **[`Beta/CHANGELOG.md`](./Beta/CHANGELOG.md)**.
 
 ---
 
@@ -37,44 +30,26 @@ All notable security updates, defect resolutions, and feature enhancements for `
 
 ---
 
-## [v2.0.1] — Production Hotfix Release
+## [v2.0.1] — Nobara Linux & Atomic OSTree Hardening
 
 ### Defect Resolutions & Bug Fixes
-- **Resolved Flathub OrcaSlicer App ID Not Found:** Migrated package identifier from deprecated `com.softfever.OrcaSlicer` to `com.orcaslicer.OrcaSlicer` with automated legacy fallback in `install_flatpak_app()`.
-- **Resolved Fatal `sed /etc/dnf/automatic.conf` Crash (Exit code 2):** Added auto-creation of missing `/etc/dnf/automatic.conf` template on fresh/minimal systems, guarded against uninstalled configuration modifications in download-only mode (`-d`), and added dual timer support for both `dnf-automatic.timer` and modern `dnf5-automatic.timer`.
+- **Nobara NVIDIA Conflicting Transaction Fix:** Fixed a package conflict where `Linux-Deployment-Tool.sh` attempted to pull `akmod-nvidia` via RPM Fusion on Nobara Linux. Nobara utilizes a custom kernel with pre-packaged `dkms-nvidia` from the `nobara-nvidia-production` repository. Nobara is now explicitly identified via `/etc/os-release`, safely skipping redundant akmod installations.
+- **Steam Deck & SteamOS Immutable Root Protection:** Added detection for SteamOS (`steamos-readonly`). Automatically unlocks root filesystem overlay (`steamos-readonly disable`) during package installation, initializes the pacman keyring, and restores read-only protection (`steamos-readonly enable`) via signal traps.
+- **Fedora Atomic (Silverblue / Kinoite / Bazzite) Support:** Added native `rpm-ostree` layering and Flatpak enforcement for immutable workstations.
+- **openSUSE Tumbleweed & Leap Compatibility:** Added native Zypper transaction engine, automatic Packman repository configuration for multimedia codecs, and AppArmor profile management.
+- **CVE-2024-6387 (regreSSHion) Mitigation:** Proactively tuned `LoginGraceTime` to `20s` in `/etc/ssh/sshd_config` to neutralize the race condition window for unauthenticated remote code execution.
 
 ---
 
-## [v2.0] — Multi-Distro Engine, Multi-DE Support & SecOps Hardening
-
-### Security Updates & CVE Mitigations
-- **CVE-2024-6387 (OpenSSH "regreSSHion"):** Mitigated remote code execution vulnerability by tuning `LoginGraceTime` to `20s`, capping `MaxAuthTries` to `3`, `MaxSessions` to `4`, `MaxStartups` to `10:30:60`, and setting `ClientAliveInterval` to `300`.
-- **Interruption & SteamOS Lock Traps:** Implemented `cleanup_handler` across `EXIT`, `INT`, `TERM`, and `HUP` to guarantee immediate re-locking of SteamOS immutable root protection (`steamos-readonly enable`) and secure removal of temporary directories.
-- **Ambient File Mode Hardening:** Enforced strict global `umask 077` at script entry; strictly enforced `0700` permissions on `$LOG_DIR` and `0600` on `$LOG_FILE`.
-- **CIS Level 2 Kernel Sysctl Hardening:** Blocked SUID memory core dumps (`fs.suid_dumpable = 0`), enforced complete ASLR (`kernel.randomize_va_space = 2`), enabled `log_martians` and reverse path filtering (`rp_filter = 1`), and dropped ICMP redirects and source routes.
-- **Privilege & Identity Auditd Rules:** Applied high-fidelity audit monitoring rules for `/etc/sudoers`, `/etc/shadow`, `/etc/passwd`, `/etc/gshadow`, and `/etc/ssh/sshd_config`.
-- **PAM SSH 2FA Protection:** Configured `pam_google_authenticator` with `nullok` during provisioning to eliminate administrator lockout prior to OTP key generation.
+## [v2.0] — Multi-Distribution Architectural Overhaul
 
 ### Feature Enhancements
-- **Multi-Distro Engine:** Added native support for Fedora Atomic variants (Silverblue, Bazzite, Kinoite), Arch Linux, SteamOS (Steam Deck), and openSUSE (Tumbleweed & Leap).
-- **Distro Override CLI Flags:** Added `--atomic`, `--bazzite`, `--silverblue`, `--arch`, `--steamos`, `--opensuse`, and `--distro=<name>` manual override flags with auto-detection fallbacks.
-- **Expanded Desktop Environment Suite:** Added native support, auto-detection, and tailored QoL modules for COSMIC Desktop (System76 Rust Epoch), XFCE, and Cinnamon alongside GNOME and KDE Plasma.
-- **Desktop Environment CLI Flags:** Added `--gnome`, `--kde`, `--cosmic`, `--xfce`, `--cinnamon`, and `--de=<name>` flags for fully automated non-interactive provisioning.
-- **SteamOS Lifecycle:** Added automated `steamos-readonly disable/enable` state machine.
-- **Package Router:** Implemented unified `pkg_install()` supporting `dnf`, `rpm-ostree`, `pacman`, `zypper`, and `apt-get` with auto-healing cache updates.
-- **Zero-Dependency Auto-Bootstrap:** Implemented `bootstrap_prerequisites()` for bare-metal installs.
-
-### Defect Resolutions & Bug Fixes
-- **Resolved Nobara NVIDIA Driver Packaging Collision:** Bypassed manual RPM Fusion `akmod-nvidia` installation on Nobara Linux to eliminate fatal conflicts with pre-installed `dkms-nvidia` packages from the `nobara-nvidia-production` repository.
-- **Resolved PowerShell 404 Download Failures:** Replaced unversioned GitHub RPM release downloads with official Microsoft package repositories and Flathub fallback.
-- **Resolved ShellCheck SC2155 Warning:** Split `readonly SCRIPT_DIR` declaration and subshell assignment to prevent masking subshell exit codes.
-- **Resolved SteamOS GPG Signature Failures:** Added automated `pacman-key --init` and `--populate archlinux holo` initialization prior to running `pacman` transactions.
-- **Resolved Non-interactive Debian Debconf Stalls:** Exported `DEBIAN_FRONTEND=noninteractive` during `apt-get` invocations.
+- Unified codebase across RPM (Fedora, RHEL, CentOS), Arch Linux, SteamOS, openSUSE, and Debian/Ubuntu.
+- Signal restoration traps (`EXIT`, `INT`, `TERM`, `HUP`) and automatic temporary directory cleanup.
+- Added `--reinstall`, `--rebuild`, `--unattended`, and `--debug` execution flags.
+- Comprehensive logging to `InstallerLogs/installer_log_<timestamp>.log`.
 
 ---
 
-## [v1.2] — Self-Healing Cache & Debian Unattended Mode
-- Added automated self-healing package cache and non-interactive Debian mode.
-
 ## [v1.0] — Initial Release
-- Initial modular deployment release.
+- Baseline flag-based provisioning script for Fedora Linux.

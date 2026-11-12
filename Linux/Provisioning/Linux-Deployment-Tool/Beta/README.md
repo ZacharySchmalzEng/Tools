@@ -1,6 +1,6 @@
-# Linux Deployment Tool — v3.0 Beta (`./Beta` Modular Suite)
+# Linux Deployment Tool — v3.0.1 Beta (`./Beta` Modular Suite)
 
-Automated, multi-distribution Linux provisioning, gaming setup, and CIS/SecOps hardening suite. Version `3.0-beta` (branch `main`) places the main modular runner (`Linux-Deployment-Tool.sh`) at the **top of the `./Beta` directory**, alongside `CHANGELOG.md`, `README.md`, `lib/common.sh`, and `modules/mod-*.sh`.
+Automated, multi-distribution Linux provisioning, gaming setup, and CIS/SecOps hardening suite. Version `3.0.1-beta` (branch `main`) places the main modular runner (`Linux-Deployment-Tool.sh`) at the **top of the `./Beta` directory**, alongside `CHANGELOG.md`, `README.md`, `lib/common.sh`, and `modules/mod-*.sh`.
 
 For full release notes, security mitigations, bug fixes, and feature enhancements, see **[CHANGELOG.md](./CHANGELOG.md)**.
 

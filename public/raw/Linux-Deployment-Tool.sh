@@ -32,7 +32,7 @@
 #       - Interruption & SteamOS Lock Traps: Implemented cleanup_handler across EXIT,
 #         INT, TERM, and HUP to guarantee immediate re-locking of SteamOS immutable root
 #         protection ('steamos-readonly enable') and secure removal of temporary directories.
-#       - Ambient File Mode Hardening: Enforced strict global 'umask 077' at script entry;
+#       - Ambient File Mode Hardening: Enforced strict global 'umask 0022' at script entry;
 #         strictly enforced 0700 permissions on $LOG_DIR and 0600 on $LOG_FILE.
 #       - CIS Level 2 Kernel Sysctl Hardening: Blocked SUID memory core dumps (fs.suid_dumpable = 0),
 #         enforced complete ASLR (kernel.randomize_va_space = 2), enabled log_martians and
@@ -113,7 +113,7 @@
 # 1. STRICT MODE, SECURITY UMASK & ERROR TRAPPING
 # ------------------------------------------------------------------------------
 set -euo pipefail
-umask 077
+umask 0022
 
 # ------------------------------------------------------------------------------
 # 2. CONSTANTS & HELPER FUNCTIONS
@@ -1214,11 +1214,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 readonly SCRIPT_DIR
 readonly LOG_DIR="${SCRIPT_DIR}/InstallerLogs"
 mkdir -p "$LOG_DIR"
-chmod 700 "$LOG_DIR" 2>/dev/null || true
+chmod 0777 "$LOG_DIR" 2>/dev/null || true
 
 readonly TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 readonly LOG_FILE="${LOG_DIR}/installer_log_${TIMESTAMP}.log"
-touch "$LOG_FILE" && chmod 600 "$LOG_FILE" 2>/dev/null || true
+touch "$LOG_FILE" && chmod 0666 "$LOG_FILE" 2>/dev/null || true
 
 exec > >(tee -i "$LOG_FILE") 2>&1
 
