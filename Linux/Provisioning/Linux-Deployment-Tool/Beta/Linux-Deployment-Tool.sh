@@ -293,10 +293,15 @@ fi
 bootstrap_prerequisites
 
 # ------------------------------------------------------------------------------
-# 5. GITHUB UPDATE DETECTION & INTERACTIVE SELF-UPDATING
-# Checks if newer versions of the runner, shared library, or invoked child modules
-# exist on GitHub and interactively prompts the user before updating.
+# 5. DEPRECATION RESOLUTION, GITHUB UPDATE DETECTION & SELF-UPDATING
+# Resolves deprecated flags, checks if newer versions of the runner, shared library,
+# or invoked child modules exist on GitHub, and prompts the user to update or abort
+# updates and run existing local scripts as-is.
 # ------------------------------------------------------------------------------
+ABORTED_UPDATES_RUN_AS_IS=false
+
+resolve_deprecated_flags "$SUITE_ROOT"
+
 check_and_prompt_github_updates() {
     if [[ "$NO_UPDATE_CHECK" == true ]]; then
         log_info "Update check bypassed via --no-update-check."
@@ -337,6 +342,10 @@ check_and_prompt_github_updates() {
         local enabled="$1"
         local mod_name="$2"
         if [[ "$enabled" != true ]]; then return 0; fi
+        if is_kept_as_is "$mod_name"; then
+            log_info "Skipping remote update check for '${mod_name}' (running local copy as-is)."
+            return 0
+        fi
         local mod_rel="modules/${mod_name}"
         local mod_target="${SUITE_ROOT}/modules/${mod_name}"
         local tmp_m=""
@@ -380,14 +389,26 @@ check_and_prompt_github_updates() {
         apply_update=true
     elif [[ -r /dev/tty && -w /dev/tty ]]; then
         local user_reply=""
-        prompt_tty "Do you want to update these scripts from GitHub now? (y/n): " user_reply true
-        if [[ $user_reply =~ ^[Yy]$ ]]; then
-            apply_update=true
-        else
-            log_info "Update skipped. Continuing with current local scripts."
-        fi
+        prompt_tty "Select action: [y] Update now / [n] Abort updates & run as-is / [q] Quit: " user_reply true
+        case "$user_reply" in
+            [Yy])
+                apply_update=true
+                ;;
+            [Qq])
+                rm -f "${candidate_tmps[@]}" 2>/dev/null || true
+                log_warn "Execution aborted by user prior to applying updates."
+                exit 0
+                ;;
+            *)
+                rm -f "${candidate_tmps[@]}" 2>/dev/null || true
+                ABORTED_UPDATES_RUN_AS_IS=true
+                log_info "Updates aborted by user. Running existing local scripts as-is..."
+                ;;
+        esac
     else
-        log_info "Non-interactive environment detected without controlling terminal. Skipping auto-update."
+        rm -f "${candidate_tmps[@]}" 2>/dev/null || true
+        ABORTED_UPDATES_RUN_AS_IS=true
+        log_info "Non-interactive environment detected without controlling terminal. Running local scripts as-is."
     fi
 
     if [[ "$apply_update" == true ]]; then
@@ -408,6 +429,10 @@ check_and_prompt_github_updates() {
 }
 
 check_and_prompt_github_updates
+
+if [[ "$ABORTED_UPDATES_RUN_AS_IS" != true ]]; then
+    check_deprecated_local_modules "$SUITE_ROOT"
+fi
 
 # ------------------------------------------------------------------------------
 # 6. INTERACTIVE PROMPTS & DESKTOP ENVIRONMENT CONFIGURATION

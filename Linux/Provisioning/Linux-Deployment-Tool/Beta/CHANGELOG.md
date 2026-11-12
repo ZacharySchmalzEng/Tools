@@ -15,11 +15,19 @@ For historical release notes for versions `1.0` through `2.1` (the monolithic pr
   - Set generated execution transcripts (`InstallerLogs/installer_log_*.log`) to `0666` (`rw-rw-rw-`) permissions. Non-root desktop sessions, IDEs, and local user accounts can now read, tail, or append to logs without requiring `sudo` or administrative elevation.
   - Set library and child module directories (`lib/`, `modules/`) and cached scripts to `0755` (`rwxr-xr-x`), maintaining administrative execution (`+x`) while allowing all system users to read the code without elevation.
 
-### Defect Resolutions & GitHub Raw Routing
+### Defect Resolutions, Update Engine & Deprecation Handlers
 - **Main Branch Raw URL Fallback:** Updated the default `GITHUB_RAW_BASE` repository URL across the main runner, shared library, and all 12 child modules to target the active `main` branch:
   `https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta`
   resolving HTTP 404 errors during isolated single-runner curl executions.
-- **Automated GitHub Update Detection & Self-Updating:** Added startup update checking against GitHub for the main runner (`Linux-Deployment-Tool.sh`), shared core library (`lib/common.sh`), and all invoked child modules (`modules/mod-*.sh`). Uses SHA-256 hash comparison between local and remote raw files, and interactively prompts the user (`y/n`) with the list of candidate updates before downloading and applying them. Seamlessly restarts execution (`exec "$0" "$@"`) if the main runner itself is updated. Can be bypassed using `--no-update-check`.
+- **Automated GitHub Update Detection & "Run As-Is" Control:** Added startup update checking against GitHub for the main runner (`Linux-Deployment-Tool.sh`), shared core library (`lib/common.sh`), and all invoked child modules (`modules/mod-*.sh`). Uses SHA-256 hash comparison between local and remote raw files, and interactively prompts the user with three clear options:
+  - `[y]` Apply updates now (and automatically restart `exec "$0" "$@"` if the main runner itself was updated).
+  - `[n]` **Abort updates & run existing local scripts as-is** (discards candidate downloads and runs local files unmodified).
+  - `[q]` Quit execution cleanly before making any system changes.
+  - Can also be bypassed entirely via `--no-update-check`.
+- **Module Deprecation & Redirect Handler Framework:** Added a declarative deprecation registry (`DEPRECATED_MODULES_REGISTRY` in `lib/common.sh`, pre-configured with a template for wrapping `mod-discord.sh` into `mod-gaming.sh`) along with three lifecycle handlers:
+  - `resolve_deprecated_flags`: Detects when a deprecated CLI flag (such as `--discord`) is invoked, logs a deprecation notice, and interactively prompts the user to `[y]` redirect to the replacement module (`--gaming`), `[a]` **abort redirection and run the existing local module script as-is**, or `[s]` skip the module. In `--unattended` or `-y` mode, automatically logs a warning and redirects to the replacement module.
+  - `check_deprecated_local_modules`: Scans `./modules/` for retired module files and prompts the user to `[r]` remove the stale file, `[s]` replace it with a lightweight `0755` redirect stub, or `[k]` keep and run the local script as-is.
+  - `handle_deprecated_module_stub`: Allows retired standalone module files to warn and forward execution to their replacement module when run directly (`sudo ./modules/mod-<name>.sh`).
 
 ---
 

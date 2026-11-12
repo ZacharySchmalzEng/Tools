@@ -1085,6 +1085,260 @@ apply_script_update() {
     return 1
 }
 
+# ------------------------------------------------------------------------------
+# MODULE DEPRECATION & REDIRECT HANDLER FRAMEWORK
+# Format: "deprecated_flag|old_module_file|replacement_flag|replacement_module_file|old_var_name|new_var_name|reason"
+# To deprecate a module (for example, wrapping mod-discord.sh into mod-gaming.sh),
+# uncomment or add its entry in DEPRECATED_MODULES_REGISTRY below.
+# ------------------------------------------------------------------------------
+DEPRECATED_MODULES_REGISTRY=(
+    # "--discord|mod-discord.sh|--gaming|mod-gaming.sh|RUN_DISCORD|RUN_GAMING|Discord provisioning has been wrapped into the Gaming module"
+)
+
+if [[ -n "${LDT_DEPRECATED_MODULES:-}" ]]; then
+    IFS=';' read -r -a _extra_deprecations <<< "$LDT_DEPRECATED_MODULES"
+    for _entry in "${_extra_deprecations[@]}"; do
+        if [[ -n "$_entry" ]]; then
+            DEPRECATED_MODULES_REGISTRY+=("$_entry")
+        fi
+    done
+    unset _extra_deprecations _entry
+fi
+
+# Track modules that the user explicitly chose to keep and run as-is during this session.
+KEEP_DEPRECATED_AS_IS=()
+
+is_kept_as_is() {
+    local target_mod="$1"
+    local item
+    if [[ -n "${KEEP_DEPRECATED_AS_IS[*]:-}" ]]; then
+        for item in "${KEEP_DEPRECATED_AS_IS[@]}"; do
+            if [[ "$item" == "$target_mod" ]]; then
+                return 0
+            fi
+        done
+    fi
+    return 1
+}
+
+# Write a lightweight 0755 redirect stub to replace a deprecated local module script.
+write_deprecated_module_stub() {
+    local target_path="$1"
+    local old_mod="$2"
+    local new_mod="$3"
+    local old_flag="$4"
+    local new_flag="$5"
+    local reason="$6"
+
+    cat <<EOF > "$target_path"
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# DEPRECATED_MODULE_STUB=true
+# Deprecated stub for ${old_mod} (${old_flag}) -> Redirects to ${new_mod} (${new_flag})
+set -euo pipefail
+umask 0022
+
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+SUITE_ROOT="\$(cd "\${SCRIPT_DIR}/.." &>/dev/null && pwd)"
+COMMON_LIB_PATH="\${SUITE_ROOT}/lib/common.sh"
+
+if [[ -f "\$COMMON_LIB_PATH" ]]; then
+    # shellcheck disable=SC1090
+    source "\$COMMON_LIB_PATH"
+else
+    echo -e "\e[31m[ERROR] Shared library (lib/common.sh) not found at \$COMMON_LIB_PATH\e[0m" >&2
+    exit 1
+fi
+
+handle_deprecated_module_stub "${old_mod}" "${new_mod}" "${old_flag}" "${new_flag}" "${reason}" "\$@"
+EOF
+    chmod 0755 "$target_path" 2>/dev/null || true
+}
+
+# Handle execution when a deprecated module stub is invoked directly or sourced.
+handle_deprecated_module_stub() {
+    local old_mod="$1"
+    local new_mod="$2"
+    local old_flag="$3"
+    local new_flag="$4"
+    local reason="$5"
+    shift 5
+
+    echo -e "\n\e[33m==============================================================="
+    echo -e "[!] DEPRECATION NOTICE: '${old_mod}' (${old_flag}) is deprecated."
+    echo -e "    Reason:      ${reason}"
+    echo -e "    Replacement: '${new_mod}' (${new_flag})"
+    echo -e "===============================================================\e[0m"
+
+    local run_replacement=false
+    if [[ "${UNATTENDED:-false}" == true || "${AUTO_YES:-}" == "-y" ]]; then
+        log_info "Unattended / -y mode: Automatically redirecting '${old_mod}' to '${new_mod}'."
+        run_replacement=true
+    elif [[ -r /dev/tty && -w /dev/tty ]]; then
+        local reply=""
+        prompt_tty "Run replacement module '${new_mod}' (${new_flag}) instead? ([y]es redirect / [n]o abort): " reply true
+        if [[ "$reply" =~ ^[Yy]$ ]]; then
+            run_replacement=true
+        else
+            log_info "Execution of deprecated module '${old_mod}' aborted by user."
+            return 0
+        fi
+    else
+        log_warn "Non-interactive terminal: Skipping deprecated module '${old_mod}'."
+        return 0
+    fi
+
+    if [[ "$run_replacement" == true ]]; then
+        local suite_root="${SUITE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." &>/dev/null && pwd)}"
+        local new_mod_path="${suite_root}/modules/${new_mod}"
+        ensure_remote_script "modules/${new_mod}" "$new_mod_path"
+        # shellcheck disable=SC1090
+        source "$new_mod_path" "$@"
+    fi
+}
+
+# Check active CLI flags against DEPRECATED_MODULES_REGISTRY.
+# Prompts the user to redirect to the replacement module, abort redirect & run local as-is, or skip.
+resolve_deprecated_flags() {
+    local suite_root="$1"
+    if [[ ${#DEPRECATED_MODULES_REGISTRY[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local entry old_flag old_mod new_flag new_mod old_var new_var reason
+    for entry in "${DEPRECATED_MODULES_REGISTRY[@]}"; do
+        IFS='|' read -r old_flag old_mod new_flag new_mod old_var new_var reason <<< "$entry"
+        if [[ -z "$old_var" || "${!old_var:-false}" != true ]]; then
+            continue
+        fi
+
+        # If triggered implicitly via --all and the replacement is already enabled, check if old_flag was explicitly requested
+        local explicitly_passed=false
+        local arg
+        if [[ -n "${ORIGINAL_ARGS[*]:-}" ]]; then
+            for arg in "${ORIGINAL_ARGS[@]}"; do
+                if [[ "$arg" == "$old_flag" ]]; then
+                    explicitly_passed=true
+                    break
+                fi
+            done
+        fi
+
+        if [[ "${RUN_ALL:-false}" == true && "$explicitly_passed" == false && "${!new_var:-false}" == true ]]; then
+            log_info "Note: '${old_mod}' (${old_flag}) is deprecated (${reason}); skipping redundant call in --all since '${new_mod}' is active."
+            printf -v "$old_var" '%s' "false"
+            continue
+        fi
+
+        echo -e "\n\e[33m==============================================================="
+        echo -e "[!] DEPRECATION NOTICE: Flag '${old_flag}' (${old_mod}) is deprecated."
+        echo -e "    Reason:      ${reason}"
+        echo -e "    Replacement: '${new_flag}' (${new_mod})"
+        echo -e "===============================================================\e[0m"
+
+        local local_old_path="${suite_root}/modules/${old_mod}"
+        local has_full_local_script=false
+        if [[ -f "$local_old_path" ]] && ! grep -q "DEPRECATED_MODULE_STUB=true" "$local_old_path" 2>/dev/null; then
+            has_full_local_script=true
+        fi
+
+        if [[ "${UNATTENDED:-false}" == true || "${AUTO_YES:-}" == "-y" ]]; then
+            log_warn "Unattended / -y mode: Automatically redirecting deprecated '${old_flag}' to '${new_flag}' (${new_mod})."
+            printf -v "$old_var" '%s' "false"
+            printf -v "$new_var" '%s' "true"
+        elif [[ -r /dev/tty && -w /dev/tty ]]; then
+            local choice=""
+            if [[ "$has_full_local_script" == true ]]; then
+                prompt_tty "Select action: [y] Redirect to ${new_flag} / [a] Abort redirect & run local ${old_mod} as-is / [s] Skip module: " choice true
+                case "$choice" in
+                    [Yy])
+                        log_info "Redirecting '${old_flag}' -> '${new_flag}' (${new_mod})."
+                        printf -v "$old_var" '%s' "false"
+                        printf -v "$new_var" '%s' "true"
+                        ;;
+                    [Aa])
+                        log_info "Redirect aborted by user. Running existing local 'modules/${old_mod}' as-is..."
+                        printf -v "$old_var" '%s' "true"
+                        KEEP_DEPRECATED_AS_IS+=("$old_mod")
+                        ;;
+                    *)
+                        log_info "Skipping deprecated module '${old_mod}'."
+                        printf -v "$old_var" '%s' "false"
+                        ;;
+                esac
+            else
+                prompt_tty "Select action: [y] Redirect to ${new_flag} (${new_mod}) / [s] Skip module: " choice true
+                case "$choice" in
+                    [Yy])
+                        log_info "Redirecting '${old_flag}' -> '${new_flag}' (${new_mod})."
+                        printf -v "$old_var" '%s' "false"
+                        printf -v "$new_var" '%s' "true"
+                        ;;
+                    *)
+                        log_info "Skipping deprecated module '${old_mod}'."
+                        printf -v "$old_var" '%s' "false"
+                        ;;
+                esac
+            fi
+        else
+            log_warn "Non-interactive environment: Redirecting deprecated '${old_flag}' to '${new_flag}'."
+            printf -v "$old_var" '%s' "false"
+            printf -v "$new_var" '%s' "true"
+        fi
+    done
+}
+
+# Inspect ./modules/ for deprecated local script files and offer to remove, stub, or keep as-is.
+check_deprecated_local_modules() {
+    local suite_root="$1"
+    if [[ ${#DEPRECATED_MODULES_REGISTRY[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local entry old_flag old_mod new_flag new_mod old_var new_var reason
+    for entry in "${DEPRECATED_MODULES_REGISTRY[@]}"; do
+        IFS='|' read -r old_flag old_mod new_flag new_mod old_var new_var reason <<< "$entry"
+        local local_old_path="${suite_root}/modules/${old_mod}"
+
+        if [[ ! -f "$local_old_path" ]]; then
+            continue
+        fi
+
+        # Skip if already converted to a lightweight redirect stub or if user chose to keep as-is
+        if grep -q "DEPRECATED_MODULE_STUB=true" "$local_old_path" 2>/dev/null; then
+            continue
+        fi
+        if is_kept_as_is "$old_mod"; then
+            continue
+        fi
+
+        echo -e "\n\e[33m[!] Deprecated local module file detected: modules/${old_mod}\e[0m"
+        echo -e "    Superseded by: modules/${new_mod} (${new_flag}) — ${reason}"
+
+        if [[ "${UNATTENDED:-false}" == true || "${AUTO_YES:-}" == "-y" ]]; then
+            log_info "Unattended / -y mode: Replacing deprecated 'modules/${old_mod}' with lightweight redirect stub."
+            write_deprecated_module_stub "$local_old_path" "$old_mod" "$new_mod" "$old_flag" "$new_flag" "$reason"
+        elif [[ -r /dev/tty && -w /dev/tty ]]; then
+            local file_action=""
+            prompt_tty "Select action for 'modules/${old_mod}': [r]emove file / [s]tub with redirect / [k]eep & run as-is: " file_action true
+            case "$file_action" in
+                [Rr])
+                    rm -f "$local_old_path" 2>/dev/null || true
+                    log_success "Removed deprecated local module file: modules/${old_mod}"
+                    ;;
+                [Ss])
+                    write_deprecated_module_stub "$local_old_path" "$old_mod" "$new_mod" "$old_flag" "$new_flag" "$reason"
+                    log_success "Replaced 'modules/${old_mod}' with a lightweight redirect stub to '${new_mod}'."
+                    ;;
+                *)
+                    log_info "Keeping existing local 'modules/${old_mod}' as-is."
+                    KEEP_DEPRECATED_AS_IS+=("$old_mod")
+                    ;;
+            esac
+        fi
+    done
+}
+
 # Initialize a child module when invoked directly as a standalone script.
 init_standalone_module() {
     local module_name="$1"

@@ -109,10 +109,11 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     ],
     keyFeatures: [
       'Top-of-Beta Main Runner: Positioned at ./Beta/Linux-Deployment-Tool.sh for clean tarball packaging (Linux-Deployment-Tool-Beta.tar.gz)',
+      'Startup GitHub Update Check & "Run As-Is" Control: Compares SHA-256 hashes and lets users [y] update, [n] abort updates & run local scripts as-is, or [q] quit',
+      'Module Deprecation & Redirect Handlers: Declarative registry (ready for wrapping --discord into --gaming) with interactive redirect, run-as-is, and local file cleanup/stubbing',
       'Lazy On-Demand GitHub Sync: Only downloads ./Beta/modules/mod-<name>.sh scripts whose CLI flags are actively invoked',
       'Standalone Child Module Execution: All 12 child scripts in ./Beta/modules/ can run independently or via the main runner',
-      'Separated CHANGELOG.md: Historical security, defect, and feature logs extracted from script headers into CHANGELOG.md',
-      'Shared Core Library (./Beta/lib/common.sh): Centralizes distro detection, package routing, traps, and recovery helpers'
+      'Relaxed Permissions (+rw): Logs created with 0666 and libraries/modules with 0755 under umask 0022 so non-root users can inspect logs'
     ],
     flags: [
       { flag: '--all', name: 'Universal Baseline', description: 'Executes all standard child modules. Intentionally excludes --harden-advanced and --2fa to prevent accidental lockout.', category: 'profile' },
@@ -210,15 +211,16 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     os: 'linux',
     category: 'Provisioning',
     language: 'bash',
-    description: 'Shared core library for v3.0.1-beta Modular Linux Deployment Tool. Provides multi-distro package routing, SteamOS read-only protection traps, INI/sshd config mutators, and standalone child script bootstrapping.',
+    description: 'Shared core library for v3.0.1-beta Modular Linux Deployment Tool. Provides multi-distro package routing, SteamOS read-only protection traps, INI/sshd config mutators, GitHub update checking, module deprecation handlers, and standalone child script bootstrapping.',
     version: '3.0.1-beta',
     author: 'Zachary Schmalz',
     requiresElevation: true,
     supportedDistrosOrEditions: ['Fedora', 'Nobara', 'Fedora Atomic / Bazzite', 'Arch Linux', 'SteamOS', 'openSUSE', 'Debian / Ubuntu'],
     keyFeatures: [
       'Centralized detect_distro, pkg_install, update_system, and resolve_package_name engines',
+      'DEPRECATED_MODULES_REGISTRY, resolve_deprecated_flags, check_deprecated_local_modules, and handle_deprecated_module_stub',
       'Signal & error traps (cleanup_handler) guaranteeing SteamOS read-only restoration',
-      'ensure_remote_script() for lazy on-demand GitHub fetching with header validation',
+      'ensure_remote_script() & check_remote_script_update() for GitHub SHA-256 verification and on-demand fetching',
       'init_standalone_module() enabling any child module to run directly from the CLI'
     ]
   },
