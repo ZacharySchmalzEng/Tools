@@ -18,7 +18,7 @@
 #
 # NOTES
 #     Version:        3.0-beta
-#     Branch:         beta/modular-v3
+#     Branch:         main
 #     Requirements:   Bash, root/sudo privileges, active internet connection.
 #     Supported OS:   Fedora, Nobara, Fedora Atomic (Silverblue/Bazzite),
 #                     Arch Linux, SteamOS, openSUSE (Tumbleweed/Leap), Debian/Ubuntu.
@@ -37,7 +37,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 readonly SCRIPT_DIR
 readonly SUITE_ROOT="${SCRIPT_DIR}"
 
-GITHUB_RAW_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/beta/modular-v3/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
+GITHUB_RAW_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
 COMMON_LIB_PATH="${SUITE_ROOT}/lib/common.sh"
 
 bootstrap_common_library() {
@@ -56,12 +56,20 @@ bootstrap_common_library() {
     if command -v curl &>/dev/null; then
         if ! curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL "${GITHUB_RAW_BASE}/lib/common.sh" -o "$tmp_lib"; then
             echo -e "\e[31m[ERROR] Failed to download lib/common.sh from ${GITHUB_RAW_BASE}/lib/common.sh\e[0m" >&2
+            echo -e "\e[33m[!] Note: If branch 'main' has not yet been pushed to GitHub, either:\e[0m" >&2
+            echo -e "    1. Push the local branch: 'git push origin main'" >&2
+            echo -e "    2. Download the full tarball containing lib/ and modules/: 'Linux-Deployment-Tool-Beta.tar.gz'" >&2
+            echo -e "    3. Or override the base URL via: 'export LDT_REPO_BASE_URL=\"<url>\"'\n" >&2
             rm -f "$tmp_lib" 2>/dev/null || true
             exit 1
         fi
     elif command -v wget &>/dev/null; then
         if ! wget -q --timeout=60 --tries=3 -O "$tmp_lib" "${GITHUB_RAW_BASE}/lib/common.sh"; then
             echo -e "\e[31m[ERROR] Failed to download lib/common.sh from ${GITHUB_RAW_BASE}/lib/common.sh\e[0m" >&2
+            echo -e "\e[33m[!] Note: If branch 'main' has not yet been pushed to GitHub, either:\e[0m" >&2
+            echo -e "    1. Push the local branch: 'git push origin main'" >&2
+            echo -e "    2. Download the full tarball containing lib/ and modules/: 'Linux-Deployment-Tool-Beta.tar.gz'" >&2
+            echo -e "    3. Or override the base URL via: 'export LDT_REPO_BASE_URL=\"<url>\"'\n" >&2
             rm -f "$tmp_lib" 2>/dev/null || true
             exit 1
         fi

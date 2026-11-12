@@ -40,7 +40,7 @@ readonly COLOR_RESET='\e[0m'
 readonly DNF_RETRY_OPTIONS=(--setopt=retries=10 --setopt=timeout=60)
 readonly SSHD_CONF="/etc/ssh/sshd_config"
 readonly PAM_CONF="/etc/pam.d/sshd"
-readonly GITHUB_RAW_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/beta/modular-v3/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
+readonly GITHUB_RAW_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
 
 # Print informational progress in cyan.
 log_info()    { echo -e "${COLOR_INFO}[INFO] $1${COLOR_RESET}"; }

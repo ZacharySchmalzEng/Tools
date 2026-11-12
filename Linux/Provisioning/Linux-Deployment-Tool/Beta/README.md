@@ -1,6 +1,6 @@
 # Linux Deployment Tool — v3.0 Beta (`./Beta` Modular Suite)
 
-Automated, multi-distribution Linux provisioning, gaming setup, and CIS/SecOps hardening suite. Version `3.0-beta` (branch `beta/modular-v3`) places the main modular runner (`Linux-Deployment-Tool.sh`) at the **top of the `./Beta` directory**, alongside `CHANGELOG.md`, `README.md`, `lib/common.sh`, and `modules/mod-*.sh`.
+Automated, multi-distribution Linux provisioning, gaming setup, and CIS/SecOps hardening suite. Version `3.0-beta` (branch `main`) places the main modular runner (`Linux-Deployment-Tool.sh`) at the **top of the `./Beta` directory**, alongside `CHANGELOG.md`, `README.md`, `lib/common.sh`, and `modules/mod-*.sh`.
 
 For full release notes, security mitigations, bug fixes, and feature enhancements, see **[CHANGELOG.md](./CHANGELOG.md)**.
 
@@ -41,7 +41,7 @@ Beta/
 Download and extract `Linux-Deployment-Tool-Beta.tar.gz` — the main runner `Linux-Deployment-Tool.sh` is located directly at the top of the extracted directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/beta/modular-v3/Linux/Provisioning/Linux-Deployment-Tool/Beta/Linux-Deployment-Tool-Beta.tar.gz | tar -xz
+curl -fsSL https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta/Linux-Deployment-Tool-Beta.tar.gz | tar -xz
 sudo ./Linux-Deployment-Tool.sh --update --apps --gaming -y
 ```
 
@@ -49,7 +49,7 @@ sudo ./Linux-Deployment-Tool.sh --update --apps --gaming -y
 Download **only** `Beta/Linux-Deployment-Tool.sh`. When executed, it automatically downloads `lib/common.sh` and **only the child module scripts matching the flags you pass**, caching them locally in `./lib/` and `./modules/` for future runs:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/beta/modular-v3/Linux/Provisioning/Linux-Deployment-Tool/Beta/Linux-Deployment-Tool.sh -o Linux-Deployment-Tool.sh
+curl -fsSL https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta/Linux-Deployment-Tool.sh -o Linux-Deployment-Tool.sh
 chmod +x Linux-Deployment-Tool.sh
 sudo ./Linux-Deployment-Tool.sh --devapps --sysadmin -y
 ```

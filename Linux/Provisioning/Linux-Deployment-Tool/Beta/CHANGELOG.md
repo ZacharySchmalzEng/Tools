@@ -9,7 +9,7 @@ All notable security updates, defect resolutions, and feature enhancements for `
 ### Feature Enhancements
 - **Modular Child Script Architecture (`Beta/`):** Decomposed the monolithic deployment script into a main orchestrator (`Linux-Deployment-Tool.sh`), a shared core library (`lib/common.sh`), and 12 standalone child module scripts (`modules/mod-*.sh`).
 - **Independent & Orchestrated Execution:** Every child script in `modules/` can be invoked independently from the command line (e.g., `sudo ./modules/mod-gaming.sh --rebuild -y`) or orchestrated via the main entry point (`sudo ./Linux-Deployment-Tool.sh --gaming --ssh -y`).
-- **Lazy Flag-Driven GitHub Sync:** Missing child scripts and the shared library are downloaded on-demand from the GitHub repository (`beta/modular-v3` branch) only when their corresponding CLI flags are invoked, and cached locally in `./lib/` and `./modules/` for subsequent runs.
+- **Lazy Flag-Driven GitHub Sync:** Missing child scripts and the shared library are downloaded on-demand from the GitHub repository (`main` branch) only when their corresponding CLI flags are invoked, and cached locally in `./lib/` and `./modules/` for subsequent runs.
 - **Standalone Changelog Extraction:** Separated historical release notes, CVE mitigations, and defect resolutions from script header comments into a dedicated `CHANGELOG.md` file.
 
 ---

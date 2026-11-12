@@ -22,7 +22,7 @@ if [[ "${COMMON_LIB_LOADED:-false}" != true ]]; then
     else
         COMMON_PATH="${MOD_DIR}/../lib/common.sh"
         mkdir -p "$(dirname "$COMMON_PATH")"
-        REPO_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/beta/modular-v3/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
+        REPO_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
         echo -e "\e[36m[INFO] Shared library not found locally. Downloading lib/common.sh from GitHub...\e[0m"
         if command -v curl &>/dev/null; then
             curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL "${REPO_BASE}/lib/common.sh" -o "$COMMON_PATH"
