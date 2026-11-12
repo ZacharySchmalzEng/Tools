@@ -5,7 +5,7 @@
 #     Automated Linux provisioning and environment setup orchestrator (Modular Beta).
 #
 # DESCRIPTION
-#     Main top-level runner for the v3.0.1-beta Modular Linux Deployment Tool.
+#     Main top-level runner for the v3.1.0-beta Modular Linux Deployment Tool.
 #     Positioned at the top of the ./Beta directory so the Beta directory can be
 #     downloaded as a simple tarball or fetched as a single runner script that
 #     downloads missing child modules into ./lib/ and ./modules/ on-demand from
@@ -17,7 +17,7 @@
 #     Issues/Requests: https://github.com/ZacharySchmalzEng/Tools/issues
 #
 # NOTES
-#     Version:        3.0.1-beta
+#     Version:        3.1.0-beta
 #     Branch:         main
 #     Requirements:   Bash, root/sudo privileges, active internet connection.
 #     Supported OS:   Fedora, Nobara, Fedora Atomic (Silverblue/Bazzite),
@@ -78,6 +78,12 @@ bootstrap_common_library() {
         exit 1
     fi
 
+    if ! head -n 1 "$tmp_lib" 2>/dev/null | grep -q "^#!"; then
+        echo -e "\e[31m[ERROR] Downloaded file for lib/common.sh did not contain a valid script header.\e[0m" >&2
+        rm -f "$tmp_lib" 2>/dev/null || true
+        exit 1
+    fi
+
     chmod 0755 "$tmp_lib"
     mv -f "$tmp_lib" "$COMMON_LIB_PATH"
     # shellcheck disable=SC1090
@@ -91,7 +97,7 @@ bootstrap_common_library
 # ------------------------------------------------------------------------------
 print_usage() {
     echo -e "\n==============================================================="
-    echo -e " Linux Provisioning & Deployment Environment Setup Script (v3.0.1-beta)"
+    echo -e " Linux Provisioning & Deployment Environment Setup Script (v3.1.0-beta)"
     echo -e " Top-of-Beta Modular Runner (Tarball & On-Demand GitHub Modules)"
     echo -e "==============================================================="
     echo "Usage: sudo ./Linux-Deployment-Tool.sh [Options]"
@@ -104,9 +110,8 @@ print_usage() {
     echo "  --sysadmin          Installs Sysadmin & network/storage diagnostics (mod-sysadmin.sh)"
     echo "  --maker             Installs 3D Printing Slicers: Prusa, Orca, Bambu (mod-maker.sh)"
     echo "  --creators          Installs Creative suite: GIMP, Krita, Blender, OBS (mod-creators.sh)"
-    echo "  --gaming            Configures Steam, Lutris, Repos & GPU Drivers (mod-gaming.sh)"
+    echo "  --gaming            Configures Steam, Lutris, Discord, Repos & GPU Drivers (mod-gaming.sh)"
     echo "  --ssh               Installs, enables, and verifies OpenSSH Server (mod-ssh.sh)"
-    echo "  --discord           Configures Discord: Native RPM or Flatpak (mod-discord.sh)"
     echo ""
     echo "DISTRIBUTION OVERRIDES (Auto-detected if omitted):"
     echo "  --atomic            Force Fedora Atomic (Silverblue/Kinoite) rpm-ostree mode"
@@ -251,7 +256,7 @@ fi
 if [[ "$RUN_ALL" == true ]]; then
     RUN_UPDATE=true; RUN_APPS=true; RUN_DEVAPPS=true; RUN_CYBER=true; RUN_SYSADMIN=true;
     RUN_MAKER=true; RUN_CREATORS=true; RUN_GAMING=true; RUN_SSH=true;
-    RUN_DISCORD=true; RUN_HARDEN=true;
+    RUN_HARDEN=true;
 fi
 
 if [[ "$UNATTENDED" == true ]]; then
@@ -281,7 +286,7 @@ if [[ "$RUN_DEBUG" == true ]]; then
     set -x
 fi
 
-log_success "Running with root privileges (v3.0.1-beta Modular Orchestrator)."
+log_success "Running with root privileges (v3.1.0-beta Modular Orchestrator)."
 log_info "Logging execution to: $LOG_FILE"
 
 if [[ "$RUN_REBUILD" == true ]]; then

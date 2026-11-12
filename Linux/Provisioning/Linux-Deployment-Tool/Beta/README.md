@@ -1,6 +1,6 @@
-# Linux Deployment Tool — v3.0.1 Beta (`./Beta` Modular Suite)
+# Linux Deployment Tool — v3.1.0 Beta (`./Beta` Modular Suite)
 
-Automated, multi-distribution Linux provisioning, gaming setup, and CIS/SecOps hardening suite. Version `3.0.1-beta` (branch `main`) places the main modular runner (`Linux-Deployment-Tool.sh`) at the **top of the `./Beta` directory**, alongside `CHANGELOG.md`, `README.md`, `lib/common.sh`, and `modules/mod-*.sh`.
+Automated, multi-distribution Linux provisioning, gaming setup, and CIS/SecOps hardening suite. Version `3.1.0-beta` (branch `main`) places the main modular runner (`Linux-Deployment-Tool.sh`) at the **top of the `./Beta` directory**, alongside `CHANGELOG.md`, `README.md`, `lib/common.sh`, and `modules/mod-*.sh`.
 
 For full release notes, security mitigations, bug fixes, and feature enhancements, see **[CHANGELOG.md](./CHANGELOG.md)**.
 
@@ -13,11 +13,11 @@ The main orchestrator (`Linux-Deployment-Tool.sh`) sits at the top of `./Beta` s
 ```text
 Beta/
 ├── Linux-Deployment-Tool.sh       # Main runner at the top of ./Beta
-├── CHANGELOG.md                   # Separated security, defect, and feature release history
+├── CHANGELOG.md                   # Separated 3.x security, defect, and feature release history
 ├── README.md                      # Modular architecture & usage documentation
 ├── Linux-Deployment-Tool-Beta.tar.gz # Pre-packaged downloadable tarball of ./Beta
 ├── lib/
-│   └── common.sh                  # Shared core library (distro routing, logging, traps, helpers)
+│   └── common.sh                  # Shared core library (distro routing, updates, deprecation, traps)
 └── modules/
     ├── mod-update.sh              # --update          (System, Flatpak, Snap upgrades + distro-sync)
     ├── mod-apps.sh                # --apps            (Core QoL CLI/GUI utilities + DE tools)
@@ -29,8 +29,7 @@ Beta/
     ├── mod-harden.sh              # --harden          (SELinux/AppArmor, auto-updates, CIS SSH)
     ├── mod-harden-adv.sh          # --harden-advanced (CIS L2 sysctl, auditd rules, no password SSH)
     ├── mod-ssh.sh                 # --ssh [--2fa]     (OpenSSH Server + optional Google Auth PAM MFA)
-    ├── mod-discord.sh             # --discord         (Native RPM on Fedora/Nobara, Flatpak on Atomic)
-    └── mod-gaming.sh              # --gaming          (Steam, Lutris, GameMode, GPU Drivers + rebuild)
+    └── mod-gaming.sh              # --gaming          (Steam, Lutris, Discord, GameMode, GPU Drivers + rebuild)
 ```
 
 ---

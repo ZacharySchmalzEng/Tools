@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 # ==============================================================================
-# MODULE: GAMING & GPU DRIVERS (mod-gaming.sh)
+# MODULE: GAMING, DISCORD & GPU DRIVERS (mod-gaming.sh)
 # SYNOPSIS
-#     Standalone & orchestrated Gaming & Driver module for Linux-Deployment-Tool.
+#     Standalone & orchestrated Gaming, Discord & Driver module for Linux-Deployment-Tool.
 # DESCRIPTION
 #     Configures gaming repositories (RPM Fusion, Packman, Pacman multilib),
-#     installs Steam, Lutris, Winetricks, GameMode, MangoHud, ProtonUp-Qt, and
-#     Bottles, updates firmware via fwupdmgr, and auto-detects NVIDIA/AMD GPUs
-#     via lspci + sysfs with full --reinstall and --rebuild kernel/initramfs
-#     recovery support.
+#     installs Steam, Lutris, Winetricks, GameMode, MangoHud, ProtonUp-Qt,
+#     Bottles, and Discord (native RPM on Fedora/Nobara or Flatpak on immutable
+#     and non-RPM systems), updates firmware via fwupdmgr, and auto-detects
+#     NVIDIA/AMD GPUs via lspci + sysfs with full --reinstall and --rebuild
+#     kernel/initramfs recovery support.
 # CHANGELOG
 #     See ../CHANGELOG.md for release history.
 # ==============================================================================
@@ -24,17 +25,25 @@ if [[ "${COMMON_LIB_LOADED:-false}" != true ]]; then
     else
         COMMON_PATH="${MOD_DIR}/../lib/common.sh"
         mkdir -p "$(dirname "$COMMON_PATH")"
+        chmod 0755 "$(dirname "$COMMON_PATH")" 2>/dev/null || true
         REPO_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
+        TMP_COMMON="${COMMON_PATH}.tmp.$$"
         echo -e "\e[36m[INFO] Shared library not found locally. Downloading lib/common.sh from GitHub...\e[0m"
         if command -v curl &>/dev/null; then
-            curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL "${REPO_BASE}/lib/common.sh" -o "$COMMON_PATH"
+            curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL "${REPO_BASE}/lib/common.sh" -o "$TMP_COMMON"
         elif command -v wget &>/dev/null; then
-            wget -q --timeout=60 --tries=3 -O "$COMMON_PATH" "${REPO_BASE}/lib/common.sh"
+            wget -q --timeout=60 --tries=3 -O "$TMP_COMMON" "${REPO_BASE}/lib/common.sh"
         else
             echo -e "\e[31m[ERROR] Neither curl nor wget is available to download lib/common.sh.\e[0m" >&2
             exit 1
         fi
-        chmod 0755 "$COMMON_PATH"
+        if ! head -n 1 "$TMP_COMMON" 2>/dev/null | grep -q "^#!"; then
+            echo -e "\e[31m[ERROR] Downloaded lib/common.sh did not contain a valid script header.\e[0m" >&2
+            rm -f "$TMP_COMMON" 2>/dev/null || true
+            exit 1
+        fi
+        chmod 0755 "$TMP_COMMON"
+        mv -f "$TMP_COMMON" "$COMMON_PATH"
     fi
     # shellcheck disable=SC1090
     source "$COMMON_PATH"
@@ -44,7 +53,7 @@ init_standalone_module "mod-gaming.sh" "$@"
 
 echo -e "\n\e[35m[========== STARTING GAMING & DRIVER MODULE ==========]\e[0m"
 if [[ "$DISTRO_FAMILY" == "rpm" ]]; then
-    PRE_PKGS=(flatpak snap dnf-plugins-core)
+    PRE_PKGS=(flatpak snapd dnf-plugins-core)
     pkg_install "${PRE_PKGS[@]}"
     if [[ "$IS_NOBARA" != true ]]; then
         fedora_ver=$(rpm -E %fedora 2>/dev/null || true)
@@ -55,6 +64,7 @@ if [[ "$DISTRO_FAMILY" == "rpm" ]]; then
         pkg_install "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora_ver}.noarch.rpm" || true
         pkg_install "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora_ver}.noarch.rpm" || true
         CACHE_REFRESHED=false
+        refresh_package_cache
         dnf "${DNF_RETRY_OPTIONS[@]}" group upgrade core ${AUTO_YES:+$AUTO_YES} || true
     else
         log_info "Nobara detected: Native gaming repository stack & Wine dependencies already active."
@@ -75,6 +85,22 @@ GAMING_PKGS=(winetricks steam lutris gamemode mangohud)
 pkg_install "${GAMING_PKGS[@]}"
 install_flatpak_app net.davidotek.pupgui2 || true
 install_flatpak_app com.usebottles.bottles || true
+
+# Integrated Discord Provisioning (wrapped from former mod-discord.sh)
+log_info "Configuring Discord for gaming stack..."
+if [[ "$IS_ATOMIC" == true || "$IS_STEAMOS" == true ]]; then
+    log_info "Atomic / SteamOS detected: Maintaining Flatpak Discord (safe for immutable filesystems)."
+    install_flatpak_app com.discordapp.Discord
+elif [[ "$DISTRO_FAMILY" == "rpm" ]]; then
+    if flatpak list 2>/dev/null | grep -qi "discord"; then
+        flatpak uninstall ${AUTO_YES:+--assumeyes} "com.discordapp.Discord" 2>/dev/null || \
+        flatpak uninstall ${AUTO_YES:+--assumeyes} "discord" 2>/dev/null || true
+    fi
+    pkg_install discord
+else
+    log_info "Installing Flathub Discord on $DISTRO_NAME..."
+    install_flatpak_app com.discordapp.Discord
+fi
 
 if command -v fwupdmgr &>/dev/null; then
     fwupdmgr refresh --force || true

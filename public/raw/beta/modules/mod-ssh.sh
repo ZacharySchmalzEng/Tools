@@ -21,17 +21,25 @@ if [[ "${COMMON_LIB_LOADED:-false}" != true ]]; then
     else
         COMMON_PATH="${MOD_DIR}/../lib/common.sh"
         mkdir -p "$(dirname "$COMMON_PATH")"
+        chmod 0755 "$(dirname "$COMMON_PATH")" 2>/dev/null || true
         REPO_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
+        TMP_COMMON="${COMMON_PATH}.tmp.$$"
         echo -e "\e[36m[INFO] Shared library not found locally. Downloading lib/common.sh from GitHub...\e[0m"
         if command -v curl &>/dev/null; then
-            curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL "${REPO_BASE}/lib/common.sh" -o "$COMMON_PATH"
+            curl --connect-timeout 10 --max-time 60 --retry 3 -fsSL "${REPO_BASE}/lib/common.sh" -o "$TMP_COMMON"
         elif command -v wget &>/dev/null; then
-            wget -q --timeout=60 --tries=3 -O "$COMMON_PATH" "${REPO_BASE}/lib/common.sh"
+            wget -q --timeout=60 --tries=3 -O "$TMP_COMMON" "${REPO_BASE}/lib/common.sh"
         else
             echo -e "\e[31m[ERROR] Neither curl nor wget is available to download lib/common.sh.\e[0m" >&2
             exit 1
         fi
-        chmod 0755 "$COMMON_PATH"
+        if ! head -n 1 "$TMP_COMMON" 2>/dev/null | grep -q "^#!"; then
+            echo -e "\e[31m[ERROR] Downloaded lib/common.sh did not contain a valid script header.\e[0m" >&2
+            rm -f "$TMP_COMMON" 2>/dev/null || true
+            exit 1
+        fi
+        chmod 0755 "$TMP_COMMON"
+        mv -f "$TMP_COMMON" "$COMMON_PATH"
     fi
     # shellcheck disable=SC1090
     source "$COMMON_PATH"
@@ -49,6 +57,7 @@ if [[ "${RUN_2FA:-false}" == true ]]; then
     log_info "Configuring Google Authenticator MFA for SSH..."
     pkg_install google-authenticator
 
+    backup_sshd_config "$SSHD_CONF"
     set_sshd_option "$SSHD_CONF" ChallengeResponseAuthentication yes
     set_sshd_option "$SSHD_CONF" KbdInteractiveAuthentication yes
     set_sshd_option "$SSHD_CONF" UsePAM yes
@@ -61,10 +70,10 @@ if [[ "${RUN_2FA:-false}" == true ]]; then
 fi
 
 service_enable "$SSH_SERVICE"
-service_restart "$SSH_SERVICE"
+validate_and_restart_sshd "$SSHD_CONF" || true
 
 if systemctl is-active --quiet "$SSH_SERVICE"; then
-    if ss -lt | grep -q ssh || true; then
+    if ss -lt 2>/dev/null | grep -qE '(:ssh|:22)\b'; then
         log_success "SSH Status is online and actively listening."
     else
         log_warn "Service is running, but no SSH listener detected."

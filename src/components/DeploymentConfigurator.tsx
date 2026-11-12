@@ -1179,7 +1179,7 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
 
               <div className="pt-3 border-t border-slate-800/80 space-y-2 text-xs text-slate-400">
                 <div className="flex items-center justify-between text-amber-400">
-                  <span className="font-semibold text-[11px]">v3.0.1-beta On-Demand Child Scripts</span>
+                  <span className="font-semibold text-[11px]">v3.1.0-beta On-Demand Child Scripts</span>
                   <span className="font-mono text-[10px] text-slate-500">branch: main</span>
                 </div>
                 <p className="text-[11px] text-slate-400">
@@ -1197,8 +1197,8 @@ export const DeploymentConfigurator: React.FC<DeploymentConfiguratorProps> = ({
                   {(linuxConfig.all || linuxConfig.harden) && !linuxConfig.hardenAdvanced && <div>↳ modules/mod-harden.sh</div>}
                   {linuxConfig.hardenAdvanced && <div>↳ modules/mod-harden-adv.sh</div>}
                   {(linuxConfig.all || linuxConfig.ssh) && <div>↳ modules/mod-ssh.sh</div>}
-                  {(linuxConfig.all || linuxConfig.discord) && <div>↳ modules/mod-discord.sh</div>}
-                  {(linuxConfig.all || linuxConfig.gaming) && <div>↳ modules/mod-gaming.sh</div>}
+                  {linuxConfig.discord && !linuxConfig.gaming && !linuxConfig.all && <div className="text-amber-400">↳ --discord (Deprecated → redirects to modules/mod-gaming.sh)</div>}
+                  {(linuxConfig.all || linuxConfig.gaming || linuxConfig.discord) && <div>↳ modules/mod-gaming.sh (Gaming + Discord + Drivers)</div>}
                 </div>
               </div>
             </div>

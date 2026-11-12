@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: MIT
 # ==============================================================================
 # SYNOPSIS
-#     Shared core library for Linux-Deployment-Tool (v3.0.1 Beta Modular Suite).
+#     Shared core library for Linux-Deployment-Tool (v3.1.0 Beta Modular Suite).
 #
 # DESCRIPTION
 #     Provides unified logging, strict error/signal trapping, multi-distribution
 #     detection, package manager routing, Flatpak helpers, configuration file
-#     mutators, and standalone child script bootstrapping.
+#     mutators, sshd -t transaction rollback, GitHub update checking, module
+#     deprecation handlers, and standalone child script bootstrapping.
 #
 # AUTHOR
 #     Zachary Schmalz
@@ -15,7 +16,7 @@
 #     Changelog:       See ./CHANGELOG.md for full release history.
 #
 # NOTES
-#     Version:         3.0.1-beta
+#     Version:         3.1.0-beta
 # ==============================================================================
 
 if [[ "${COMMON_LIB_LOADED:-false}" == true ]]; then
@@ -37,7 +38,7 @@ readonly COLOR_SUCCESS='\e[32m'
 readonly COLOR_WARN='\e[33m'
 readonly COLOR_ERROR='\e[31m'
 readonly COLOR_RESET='\e[0m'
-readonly DNF_RETRY_OPTIONS=(--setopt=retries=10 --setopt=timeout=60)
+readonly DNF_RETRY_OPTIONS=(--setopt=retries=10 --setopt=timeout=15 --setopt=minrate=1000)
 readonly SSHD_CONF="/etc/ssh/sshd_config"
 readonly PAM_CONF="/etc/pam.d/sshd"
 readonly GITHUB_RAW_BASE="${LDT_REPO_BASE_URL:-https://raw.githubusercontent.com/ZacharySchmalzEng/Tools/main/Linux/Provisioning/Linux-Deployment-Tool/Beta}"
@@ -345,6 +346,7 @@ resolve_package_name() {
         rpm|atomic)
             case "$package" in
                 wireshark-qt) echo "wireshark" ;;
+                snap) echo "snapd" ;;
                 *) echo "$package" ;;
             esac
             ;;
@@ -371,6 +373,7 @@ resolve_package_name() {
                 steam) echo "steam" ;;
                 lutris) echo "lutris" ;;
                 winetricks) echo "winetricks" ;;
+                snap) echo "snapd" ;;
                 openssh-server) echo "openssh-server" ;;
                 google-authenticator) echo "libpam-google-authenticator" ;;
                 dnf-automatic) echo "unattended-upgrades" ;;
@@ -384,6 +387,7 @@ resolve_package_name() {
                 bind-utils) echo "bind" ;;
                 wireshark-qt) echo "wireshark-qt" ;;
                 nmap-ncat) echo "nmap" ;;
+                snap) echo "snapd" ;;
                 openssh-server) echo "openssh" ;;
                 google-authenticator) echo "libpam-google-authenticator" ;;
                 dnf-automatic) echo "pacman" ;;
@@ -397,6 +401,8 @@ resolve_package_name() {
                 p7zip-plugins) echo "p7zip" ;;
                 wireshark-qt) echo "wireshark-ui-qt" ;;
                 nmap-ncat) echo "netcat-openbsd" ;;
+                prusa-slicer) echo "PrusaSlicer" ;;
+                snap) echo "snapd" ;;
                 openssh-server) echo "openssh" ;;
                 google-authenticator) echo "google-authenticator-libpam" ;;
                 audit) echo "audit" ;;
@@ -442,8 +448,12 @@ pkg_install() {
                     if [[ "$AUTO_YES" == "-y" ]]; then reinstall_cmd+=(-y); fi
                     reinstall_cmd+=(reinstall "${reinstall_packages[@]}")
                     if ! run_cmd "Reinstalling packages: ${reinstall_packages[*]}" "${reinstall_cmd[@]}"; then
-                        log_warn "Package reinstallation failed for: ${reinstall_packages[*]}"
-                        return 1
+                        log_warn "DNF reinstall encountered mirror/cache error; expiring metadata cache and retrying with --refresh..."
+                        dnf clean expire-cache &>/dev/null || true
+                        if ! run_cmd "Retrying package reinstall (--refresh): ${reinstall_packages[*]}" "${reinstall_cmd[@]}" --refresh; then
+                            log_warn "Package reinstallation failed for: ${reinstall_packages[*]}"
+                            return 1
+                        fi
                     fi
                 fi
                 if [[ ${#install_packages[@]} -gt 0 ]]; then
@@ -451,8 +461,12 @@ pkg_install() {
                     if [[ "$AUTO_YES" == "-y" ]]; then install_cmd+=(-y); fi
                     install_cmd+=(install --skip-unavailable "${install_packages[@]}")
                     if ! run_cmd "Installing missing packages: ${install_packages[*]}" "${install_cmd[@]}"; then
-                        log_warn "Package installation failed for: ${install_packages[*]}"
-                        return 1
+                        log_warn "DNF install encountered mirror/cache error; expiring metadata cache and retrying with --refresh..."
+                        dnf clean expire-cache &>/dev/null || true
+                        if ! run_cmd "Retrying package install (--refresh): ${install_packages[*]}" "${install_cmd[@]}" --refresh; then
+                            log_warn "Package installation failed for: ${install_packages[*]}"
+                            return 1
+                        fi
                     fi
                 fi
             else
@@ -460,8 +474,12 @@ pkg_install() {
                 if [[ "$AUTO_YES" == "-y" ]]; then install_cmd+=(-y); fi
                 install_cmd+=(install --skip-unavailable "${resolved_packages[@]}")
                 if ! run_cmd "Installing packages: ${resolved_packages[*]}" "${install_cmd[@]}"; then
-                    log_warn "Package installation failed for: ${resolved_packages[*]}"
-                    return 1
+                    log_warn "DNF install encountered mirror/cache error; expiring metadata cache and retrying with --refresh..."
+                    dnf clean expire-cache &>/dev/null || true
+                    if ! run_cmd "Retrying package install (--refresh): ${resolved_packages[*]}" "${install_cmd[@]}" --refresh; then
+                        log_warn "Package installation failed for: ${resolved_packages[*]}"
+                        return 1
+                    fi
                 fi
             fi
             ;;
@@ -549,7 +567,11 @@ update_system() {
             update_cmd+=(upgrade)
             if [[ -n "$DOWNLOAD_ONLY" ]]; then update_cmd+=("$DOWNLOAD_ONLY"); fi
             refresh_package_cache
-            run_cmd "Updating system packages via DNF" "${update_cmd[@]}" || log_warn "System update failed."
+            if ! run_cmd "Updating system packages via DNF" "${update_cmd[@]}"; then
+                log_warn "DNF upgrade encountered mirror/cache error; expiring metadata cache and retrying with --refresh..."
+                dnf clean expire-cache &>/dev/null || true
+                run_cmd "Retrying DNF system upgrade (--refresh)" "${update_cmd[@]}" --refresh || log_warn "System update failed."
+            fi
             if [[ "$RUN_REBUILD" == true && -z "$DOWNLOAD_ONLY" ]]; then
                 log_info "Rebuild active with --update: Running DNF distro-sync to repair package drift..."
                 dnf "${DNF_RETRY_OPTIONS[@]}" distro-sync ${AUTO_YES:+$AUTO_YES} --skip-unavailable || log_warn "DNF distro-sync reported warnings."
@@ -740,6 +762,54 @@ set_sshd_option() {
     mv -f "$tmp_file" "$config_file"
 }
 
+SSHD_BACKUP_FILE=""
+
+# Create a known-good backup of /etc/ssh/sshd_config before applying mutations.
+backup_sshd_config() {
+    local config_file="${1:-$SSHD_CONF}"
+    if [[ ! -f "$config_file" ]]; then
+        return 0
+    fi
+    SSHD_BACKUP_FILE="${config_file}.ldt.bak.$$"
+    cp -pf "$config_file" "$SSHD_BACKUP_FILE" 2>/dev/null || cp -f "$config_file" "$SSHD_BACKUP_FILE"
+    chmod 0600 "$SSHD_BACKUP_FILE" 2>/dev/null || true
+    TEMP_CLEANUP_DIRS+=("$SSHD_BACKUP_FILE")
+}
+
+# Validate /etc/ssh/sshd_config syntax with sshd -t before restarting the SSH daemon.
+# Automatically rolls back to SSHD_BACKUP_FILE if validation fails to prevent remote lockout.
+validate_and_restart_sshd() {
+    local config_file="${1:-$SSHD_CONF}"
+    if [[ -f "$config_file" ]] && command -v sshd &>/dev/null; then
+        # Ensure privilege separation directory exists on Debian/Ubuntu before running sshd -t
+        mkdir -p /run/sshd 2>/dev/null || true
+        if sshd -t -f "$config_file" 2>/dev/null; then
+            log_success "OpenSSH configuration validated via 'sshd -t'."
+            if [[ -n "$SSHD_BACKUP_FILE" && -f "$SSHD_BACKUP_FILE" ]]; then
+                rm -f "$SSHD_BACKUP_FILE" 2>/dev/null || true
+                SSHD_BACKUP_FILE=""
+            fi
+            service_restart "$SSH_SERVICE"
+            return 0
+        else
+            log_error "OpenSSH configuration failed 'sshd -t' syntax validation! Rolling back changes to prevent SSH lockout..."
+            if [[ -n "$SSHD_BACKUP_FILE" && -f "$SSHD_BACKUP_FILE" ]]; then
+                mv -f "$SSHD_BACKUP_FILE" "$config_file"
+                chmod 0600 "$config_file" 2>/dev/null || true
+                SSHD_BACKUP_FILE=""
+                log_warn "Restored previous working $config_file from backup."
+            fi
+            return 1
+        fi
+    fi
+
+    if [[ -n "$SSHD_BACKUP_FILE" && -f "$SSHD_BACKUP_FILE" ]]; then
+        rm -f "$SSHD_BACKUP_FILE" 2>/dev/null || true
+        SSHD_BACKUP_FILE=""
+    fi
+    service_restart "$SSH_SERVICE"
+}
+
 # Enable the multilib section and its Include directive without touching adjacent commented sections.
 enable_multilib_repository() {
     local config_file="${1:-/etc/pacman.conf}"
@@ -822,6 +892,21 @@ bootstrap_prerequisites() {
 
     if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
         missing_pkgs+=(curl)
+    fi
+
+    if ! command -v sha256sum &>/dev/null; then
+        missing_pkgs+=(coreutils)
+    fi
+
+    if ! command -v awk &>/dev/null; then
+        missing_pkgs+=(gawk)
+    fi
+
+    if ! command -v gpg &>/dev/null; then
+        case "$DISTRO_FAMILY" in
+            rpm|opensuse) missing_pkgs+=(gnupg2) ;;
+            deb|arch|steamos) missing_pkgs+=(gnupg) ;;
+        esac
     fi
 
     if ! command -v lspci &>/dev/null; then
@@ -1088,11 +1173,11 @@ apply_script_update() {
 # ------------------------------------------------------------------------------
 # MODULE DEPRECATION & REDIRECT HANDLER FRAMEWORK
 # Format: "deprecated_flag|old_module_file|replacement_flag|replacement_module_file|old_var_name|new_var_name|reason"
-# To deprecate a module (for example, wrapping mod-discord.sh into mod-gaming.sh),
-# uncomment or add its entry in DEPRECATED_MODULES_REGISTRY below.
+# When a module is consolidated (for example, wrapping mod-discord.sh into mod-gaming.sh),
+# add its entry in DEPRECATED_MODULES_REGISTRY below.
 # ------------------------------------------------------------------------------
 DEPRECATED_MODULES_REGISTRY=(
-    # "--discord|mod-discord.sh|--gaming|mod-gaming.sh|RUN_DISCORD|RUN_GAMING|Discord provisioning has been wrapped into the Gaming module"
+    "--discord|mod-discord.sh|--gaming|mod-gaming.sh|RUN_DISCORD|RUN_GAMING|Discord provisioning has been wrapped into the Gaming module"
 )
 
 if [[ -n "${LDT_DEPRECATED_MODULES:-}" ]]; then
@@ -1130,6 +1215,11 @@ write_deprecated_module_stub() {
     local new_flag="$5"
     local reason="$6"
 
+    if [[ ! "$old_mod" =~ ^mod-[a-z0-9-]+\.sh$ || ! "$new_mod" =~ ^mod-[a-z0-9-]+\.sh$ ]]; then
+        log_error "Refusing to write deprecation stub for invalid module identifier: ${old_mod} -> ${new_mod}"
+        return 1
+    fi
+
     cat <<EOF > "$target_path"
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
@@ -1163,6 +1253,11 @@ handle_deprecated_module_stub() {
     local new_flag="$4"
     local reason="$5"
     shift 5
+
+    if [[ ! "$new_mod" =~ ^mod-[a-z0-9-]+\.sh$ ]]; then
+        log_error "Invalid replacement module identifier: ${new_mod}"
+        return 1
+    fi
 
     echo -e "\n\e[33m==============================================================="
     echo -e "[!] DEPRECATION NOTICE: '${old_mod}' (${old_flag}) is deprecated."
@@ -1208,7 +1303,15 @@ resolve_deprecated_flags() {
     local entry old_flag old_mod new_flag new_mod old_var new_var reason
     for entry in "${DEPRECATED_MODULES_REGISTRY[@]}"; do
         IFS='|' read -r old_flag old_mod new_flag new_mod old_var new_var reason <<< "$entry"
-        if [[ -z "$old_var" || "${!old_var:-false}" != true ]]; then
+        if [[ ! "$old_var" =~ ^RUN_[A-Z0-9_]+$ || ! "$new_var" =~ ^RUN_[A-Z0-9_]+$ ]]; then
+            log_warn "Skipping malformed deprecation registry variable mapping: ${old_var:-} -> ${new_var:-}"
+            continue
+        fi
+        if [[ ! "$old_mod" =~ ^mod-[a-z0-9-]+\.sh$ || ! "$new_mod" =~ ^mod-[a-z0-9-]+\.sh$ ]]; then
+            log_warn "Skipping malformed deprecation registry module filename: ${old_mod:-} -> ${new_mod:-}"
+            continue
+        fi
+        if [[ "${!old_var:-false}" != true ]]; then
             continue
         fi
 
@@ -1298,6 +1401,9 @@ check_deprecated_local_modules() {
     local entry old_flag old_mod new_flag new_mod old_var new_var reason
     for entry in "${DEPRECATED_MODULES_REGISTRY[@]}"; do
         IFS='|' read -r old_flag old_mod new_flag new_mod old_var new_var reason <<< "$entry"
+        if [[ ! "$old_mod" =~ ^mod-[a-z0-9-]+\.sh$ || ! "$new_mod" =~ ^mod-[a-z0-9-]+\.sh$ ]]; then
+            continue
+        fi
         local local_old_path="${suite_root}/modules/${old_mod}"
 
         if [[ ! -f "$local_old_path" ]]; then

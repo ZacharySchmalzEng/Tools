@@ -14,7 +14,6 @@ import modCreatorsScript from '../../Linux/Provisioning/Linux-Deployment-Tool/Be
 import modHardenScript from '../../Linux/Provisioning/Linux-Deployment-Tool/Beta/modules/mod-harden.sh?raw';
 import modHardenAdvScript from '../../Linux/Provisioning/Linux-Deployment-Tool/Beta/modules/mod-harden-adv.sh?raw';
 import modSshScript from '../../Linux/Provisioning/Linux-Deployment-Tool/Beta/modules/mod-ssh.sh?raw';
-import modDiscordScript from '../../Linux/Provisioning/Linux-Deployment-Tool/Beta/modules/mod-discord.sh?raw';
 import modGamingScript from '../../Linux/Provisioning/Linux-Deployment-Tool/Beta/modules/mod-gaming.sh?raw';
 
 export const RAW_SCRIPTS: Record<string, { path: string; content: string }> = {
@@ -75,10 +74,6 @@ export const RAW_SCRIPTS: Record<string, { path: string; content: string }> = {
     path: 'Linux/Provisioning/Linux-Deployment-Tool/Beta/modules/mod-ssh.sh',
     content: modSshScript
   },
-  'mod-discord.sh': {
-    path: 'Linux/Provisioning/Linux-Deployment-Tool/Beta/modules/mod-discord.sh',
-    content: modDiscordScript
-  },
   'mod-gaming.sh': {
     path: 'Linux/Provisioning/Linux-Deployment-Tool/Beta/modules/mod-gaming.sh',
     content: modGamingScript
@@ -93,8 +88,8 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     os: 'linux',
     category: 'Provisioning',
     language: 'bash',
-    description: 'Modular v3.0.1-beta main runner located at the top of the ./Beta directory (branch main). Can be downloaded as a simple tarball (Linux-Deployment-Tool-Beta.tar.gz) or run standalone to fetch missing child modules on-demand from GitHub only when their flags are called.',
-    version: '3.0.1-beta',
+    description: 'Modular v3.1.0-beta main runner located at the top of the ./Beta directory (branch main). Can be downloaded as a simple tarball (Linux-Deployment-Tool-Beta.tar.gz) or run standalone to fetch missing child modules on-demand from GitHub only when their flags are called.',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz (github.com/ZacharySchmalzEng/Tools)',
     requiresElevation: true,
     supportedDistrosOrEditions: [
@@ -124,9 +119,8 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
       { flag: '--sysadmin', name: 'System Administration (mod-sysadmin.sh)', description: 'Remmina, tmux, Wireshark, Nmap, TCPDump, DNS and network diagnostics, disk observability, and process tracing.', category: 'apps', associatedSoftware: ['Remmina', 'tmux', 'Wireshark', 'Nmap', 'TCPDump', 'dig', 'mtr', 'iperf3', 'sysstat', 'iotop', 'ncdu', 'smartmontools', 'lsof', 'strace'] },
       { flag: '--maker', name: '3D Printing & CAD (mod-maker.sh)', description: 'PrusaSlicer, OrcaSlicer, and Bambu Studio.', category: 'apps', associatedSoftware: ['PrusaSlicer', 'OrcaSlicer', 'Bambu Studio'] },
       { flag: '--creators', name: 'Creative Production (mod-creators.sh)', description: 'GIMP, Krita, Blender, Audacity, Inkscape, and OBS Studio.', category: 'apps', associatedSoftware: ['GIMP', 'Krita', 'Blender', 'Audacity', 'Inkscape', 'OBS Studio'] },
-      { flag: '--gaming', name: 'Gaming & GPU Drivers (mod-gaming.sh)', description: 'Steam, Lutris, Bottles, GameMode, MangoHud, and auto-detected GPU drivers with Nobara safeguards.', category: 'apps', associatedSoftware: ['Steam', 'Lutris', 'Bottles', 'GameMode', 'MangoHud', 'NVIDIA akmod/DKMS / AMD Mesa Vulkan'] },
+      { flag: '--gaming', name: 'Gaming, Discord & GPU Drivers (mod-gaming.sh)', description: 'Steam, Lutris, Bottles, Discord (native RPM or Flatpak), GameMode, MangoHud, and auto-detected GPU drivers with Nobara safeguards.', category: 'apps', associatedSoftware: ['Steam', 'Lutris', 'Bottles', 'Discord', 'GameMode', 'MangoHud', 'NVIDIA akmod/DKMS / AMD Mesa Vulkan'] },
       { flag: '--ssh', name: 'OpenSSH Server (mod-ssh.sh)', description: 'Installs, enables, and verifies the OpenSSH daemon with socket validation.', category: 'core' },
-      { flag: '--discord', name: 'Discord Configuration (mod-discord.sh)', description: 'Configures native RPM on standard Fedora; sandboxed Flathub package on Atomic and SteamOS.', category: 'apps' },
       { flag: '--reinstall', name: 'Safe Package Reinstall', description: 'Reinstalls already-installed packages selected by active modules while installing missing ones.', category: 'modifier' },
       { flag: '--rebuild', name: 'Deep Driver & Initramfs Rebuild', description: 'Forces GPU kernel module rebuilds (dkms, akmods) and initramfs regeneration (dracut, mkinitcpio, update-initramfs).', category: 'modifier' },
       { flag: '--harden', name: 'Safe Baseline Hardening (mod-harden.sh)', description: 'Verifies SELinux/AppArmor, configures automated security patching, and disables direct root login over SSH.', category: 'security' },
@@ -211,8 +205,8 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     os: 'linux',
     category: 'Provisioning',
     language: 'bash',
-    description: 'Shared core library for v3.0.1-beta Modular Linux Deployment Tool. Provides multi-distro package routing, SteamOS read-only protection traps, INI/sshd config mutators, GitHub update checking, module deprecation handlers, and standalone child script bootstrapping.',
-    version: '3.0.1-beta',
+    description: 'Shared core library for v3.1.0-beta Modular Linux Deployment Tool. Provides multi-distro package routing, SteamOS read-only protection traps, INI/sshd config mutators, GitHub update checking, module deprecation handlers, and standalone child script bootstrapping.',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz',
     requiresElevation: true,
     supportedDistrosOrEditions: ['Fedora', 'Nobara', 'Fedora Atomic / Bazzite', 'Arch Linux', 'SteamOS', 'openSUSE', 'Debian / Ubuntu'],
@@ -231,14 +225,14 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     os: 'linux',
     category: 'Provisioning',
     language: 'bash',
-    description: 'Separated release changelog documenting all security updates, defect resolutions, and feature enhancements from v1.0 through v3.0.1-beta.',
-    version: '3.0.1-beta',
+    description: 'Separated release changelog documenting all security updates, defect resolutions, and feature enhancements from v1.0 through v3.1.0-beta.',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz',
     requiresElevation: false,
     supportedDistrosOrEditions: ['All Supported Linux Distributions'],
     keyFeatures: [
       'Extracted from script headers to keep runner and child modules concise',
-      'Tracks CVE-2024-6387 mitigations, SteamOS trap guards, and v3.0.1-beta modular breakdown',
+      'Tracks CVE-2024-6387 mitigations, SteamOS trap guards, and v3.1.0-beta modular breakdown',
       'Documents v2.1 --sysadmin, --reinstall, and --rebuild additions'
     ]
   },
@@ -249,14 +243,14 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     os: 'linux',
     category: 'Gaming',
     language: 'bash',
-    description: 'Standalone & orchestrated Gaming & GPU Driver child module (--gaming). Configures RPM Fusion, Packman, or multilib, installs Steam/Lutris/Bottles, and provisions NVIDIA/AMD drivers with --rebuild recovery.',
-    version: '3.0.1-beta',
+    description: 'Standalone & orchestrated Gaming, Discord & GPU Driver child module (--gaming). Configures RPM Fusion, Packman, or multilib, installs Steam/Lutris/Bottles/Discord, and provisions NVIDIA/AMD drivers with --rebuild recovery.',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz',
     requiresElevation: true,
     supportedDistrosOrEditions: ['Fedora', 'Nobara', 'Atomic / Bazzite', 'Arch', 'SteamOS', 'openSUSE', 'Debian / Ubuntu'],
     keyFeatures: [
       'Can be executed standalone (sudo ./modules/mod-gaming.sh --rebuild -y) or via main runner',
-      'Auto-downloads ./Beta/lib/common.sh from GitHub if missing locally',
+      'Integrated Discord Provisioning: Native RPM via RPM Fusion on Fedora/Nobara, Flatpak on Atomic/SteamOS/non-RPM',
       'Hybrid lspci + /sys/bus/pci/devices GPU hardware detection',
       'Full --reinstall and --rebuild kernel module (dkms/akmods) and initramfs regeneration'
     ]
@@ -269,7 +263,7 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     category: 'Provisioning',
     language: 'bash',
     description: 'Standalone & orchestrated System Administration child module (--sysadmin). Installs Remmina, tmux, Wireshark, Nmap, TCPDump, mtr, iperf3, sysstat, iotop, ncdu, smartmontools, lsof, and strace.',
-    version: '3.0.1-beta',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz',
     requiresElevation: true,
     supportedDistrosOrEditions: ['Fedora', 'Nobara', 'Atomic / Bazzite', 'Arch', 'SteamOS', 'openSUSE', 'Debian / Ubuntu'],
@@ -287,7 +281,7 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     category: 'Provisioning',
     language: 'bash',
     description: 'Standalone & orchestrated Standard Hardening child module (--harden). Enforces SELinux/AppArmor, configures automatic security updates, and applies CIS OpenSSH + CVE-2024-6387 mitigations.',
-    version: '3.0.1-beta',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz',
     requiresElevation: true,
     supportedDistrosOrEditions: ['Fedora', 'Nobara', 'Atomic / Bazzite', 'Arch', 'SteamOS', 'openSUSE', 'Debian / Ubuntu'],
@@ -305,7 +299,7 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     category: 'Provisioning',
     language: 'bash',
     description: 'Standalone & orchestrated System QoL & Desktop Apps child module (--apps). Installs CLI/GUI utilities, Desktop Environment tools (GNOME, KDE, COSMIC, XFCE, Cinnamon), and Flathub desktop apps.',
-    version: '3.0.1-beta',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz',
     requiresElevation: true,
     supportedDistrosOrEditions: ['Fedora', 'Nobara', 'Atomic / Bazzite', 'Arch', 'SteamOS', 'openSUSE', 'Debian / Ubuntu'],
@@ -323,7 +317,7 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     category: 'Provisioning',
     language: 'bash',
     description: 'Standalone & orchestrated Developer Stack child module (--devapps). Installs Python 3, OpenSSL, Git, jq, fzf, tealdeer, rsync, Microsoft PowerShell (pwsh), and VS Code.',
-    version: '3.0.1-beta',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz',
     requiresElevation: true,
     supportedDistrosOrEditions: ['Fedora', 'Nobara', 'Atomic / Bazzite', 'Arch', 'SteamOS', 'openSUSE', 'Debian / Ubuntu'],
@@ -341,7 +335,7 @@ export const SCRIPT_CATALOG: ScriptItem[] = [
     category: 'Networking',
     language: 'bash',
     description: 'Standalone & orchestrated OpenSSH + 2FA child module (--ssh [--2fa]). Installs OpenSSH Server, configures optional Google Authenticator PAM MFA, and validates socket listeners.',
-    version: '3.0.1-beta',
+    version: '3.1.0-beta',
     author: 'Zachary Schmalz',
     requiresElevation: true,
     supportedDistrosOrEditions: ['Fedora', 'Nobara', 'Atomic / Bazzite', 'Arch', 'SteamOS', 'openSUSE', 'Debian / Ubuntu'],
