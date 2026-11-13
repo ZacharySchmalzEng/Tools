@@ -6,26 +6,13 @@ Version 2.1 provides a modular, self-bootstrapping deployment tool with multi-di
 
 Rather than a monolithic installation script, this tool uses command-line flags to let you pick and choose exactly which application stacks, system tweaks, and security hardening tiers you want to deploy.
 
-## 📋 Release Changelog (v2.1)
+## 📋 Release Summary (v2.1)
 
-### 🚀 Feature Enhancements
-* **Multi-Tier Recovery Modes (v2.1):** Added `--reinstall` for package-manager reinstall operations and `--rebuild` to also rebuild supported GPU kernel modules and initramfs images. Fedora Atomic and Bazzite cannot force-reinstall host-image drivers; Ubuntu reinstalls its currently installed NVIDIA stack or selects a recommended driver when none is installed.
-* **DNF Network Retries (v2.1):** DNF package and metadata operations allow up to 10 retries with a 60-second timeout to better tolerate slow or intermittently unreachable mirrors.
+* **Multi-Tier Recovery & Network Resilience:** Added `--reinstall` for native package-manager repairs, `--rebuild` for DKMS/akmods and initramfs regeneration, hybrid multi-GPU PCI/sysfs detection, and automatic DNF mirror retries (`--setopt=retries=10 --setopt=timeout=60`).
+* **8-Family Multi-Distribution Engine:** Native handling and CLI overrides (`--atomic`, `--bazzite`, `--steamos`, `--arch`, `--opensuse`, `--distro=<name>`) across Fedora/RHEL, Nobara, Fedora Atomic, Arch Linux, SteamOS, openSUSE, and Debian/Ubuntu with automatic prerequisite self-bootstrapping.
+* **Packaging & Hardening Reliability:** Includes the `--sysadmin` observability suite, Nobara `dkms-nvidia` conflict protection, OrcaSlicer Flathub ID migration (`com.orcaslicer.OrcaSlicer`), dual `dnf-automatic`/`dnf5-automatic` timer resilience, SteamOS GPG keyring initialization, and non-interactive APT execution.
 
-### 🐛 Defect Resolutions & Bug Fixes
-* **Flathub OrcaSlicer App ID Migration (v2.0.1):** Migrated package identifier from deprecated `com.softfever.OrcaSlicer` to `com.orcaslicer.OrcaSlicer`, with automated legacy fallback in `install_flatpak_app()` to prevent `error: Nothing matches in remote flathub`.
-* **Fatal sed /etc/dnf/automatic.conf Crash (Exit code 2) (v2.0.1):** Added auto-creation of missing `/etc/dnf/automatic.conf` templates on fresh/minimal systems, guarded against service modification in download-only mode (`-d`), and added dual timer support for both `dnf-automatic.timer` and modern `dnf5-automatic.timer`.
-* **Nobara Linux NVIDIA Packaging Conflict (v2.0):** Bypasses manual RPM Fusion `akmod-nvidia` on Nobara to prevent fatal package transaction collisions with pre-installed `dkms-nvidia` from `nobara-nvidia-production`.
-* **PowerShell 404 Download Failures (v2.0):** Replaced hardcoded/brittle GitHub RPM URLs with official Microsoft repository registration (`packages.microsoft.com`) and Flathub fallback.
-* **ShellCheck SC2155 Subshell Masking (v2.0):** Split `readonly SCRIPT_DIR` declaration and assignment to preserve subshell exit code visibility.
-* **SteamOS GPG Keyring Initialization (v2.0):** Automates `pacman-key --init` and `--populate archlinux holo` before package transactions to avoid GPG verification aborts.
-* **Debian/Ubuntu Debconf Freezes (v2.0):** Enforces non-interactive frontends (`DEBIAN_FRONTEND=noninteractive`) across all `apt-get` operations.
-
-### 🚀 Feature Enhancements
-* **Multi-Distribution Engine:** Native specialized handling for Fedora Atomic (Silverblue, Bazzite, Kinoite), Arch Linux, SteamOS (Steam Deck), openSUSE (Tumbleweed & Leap), Nobara, Fedora, and Debian/Ubuntu.
-* **Distro Override CLI Flags:** Added `--atomic`, `--bazzite`, `--silverblue`, `--arch`, `--steamos`, `--opensuse`, and `--distro=<name>` flags with auto-detection fallbacks.
-* **SteamOS Root Lifecycle:** Automated `steamos-readonly disable` and `steamos-readonly enable` state management.
-* **Zero On-Box Dependencies:** Automatic self-bootstrapping installs missing core utilities (`curl`, `pciutils`, `flatpak`) at runtime.
+> 📖 **Full Release History:** See **[`CHANGELOG.md`](./CHANGELOG.md)** for complete `v1.x–v2.x` production release notes, or **[`Beta/CHANGELOG.md`](./Beta/CHANGELOG.md)** for the modular `v3.x-beta` architecture changelog.
 
 ## ✨ Features
 
