@@ -673,7 +673,7 @@ if ($RunSoftware) {
     # Compile the array dynamically based on requested modules
     $packages = @() 
     if ($Apps) {
-        $packages += "Brave.Brave", "Google.Chrome", "Mozilla.Firefox", "Opera.Opera", "7zip.7zip", 
+        $packages += "Brave.Brave", "Google.Chrome", "Mozilla.Firefox", "7zip.7zip", 
                      "VideoLAN.VLC", "Discord.Discord", "Obsidian.Obsidian", "OpenWhisperSystems.Signal", 
                      "9NKSQGP7F2NH", "CrystalDewWorld.CrystalDiskInfo.ShizukuEdition", 
                      "Microsoft.PowerToys", "voidtools.Everything", "Microsoft.WindowsTerminal", "Rufus.Rufus" 
